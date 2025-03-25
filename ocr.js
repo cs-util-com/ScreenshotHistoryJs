@@ -4,13 +4,14 @@ import {
 
 async function performOCR(imageBlob, timestamp) {
     try {
+        const ocrLanguage = localStorage.getItem('ocrLanguage') || 'eng';
         const {
             data: {
                 text
             }
         } = await Tesseract.recognize(
             imageBlob,
-            'eng', // TODO: Make language configurable
+            ocrLanguage,
             {
                 logger: m => console.log(m)
             }

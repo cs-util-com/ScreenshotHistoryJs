@@ -39,11 +39,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const openSettingsButton = document.getElementById('openSettings');
     const closeSettingsButton = document.getElementById('closeSettings');
     const saveSettingsButton = document.getElementById('saveSettings');
+    const folderDisplay = document.getElementById('folderDisplay');
+    const dailyGroups = document.getElementById('dailyGroups');
 
     // Load folder path from local storage
     const folderPath = await getFolderPath();
     if (folderPath) {
         folderPathDisplay.textContent = folderPath;
+        folderDisplay.textContent = `Current folder: ${folderPath}`;
     }
 
     // Event listeners
@@ -62,6 +65,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     selectFolderButton.addEventListener('click', async () => {
         const path = await selectFolder();
         folderPathDisplay.textContent = path;
+        folderDisplay.textContent = `Current folder: ${path}`;
     });
 
     searchInput.addEventListener('input', async (event) => {
@@ -95,8 +99,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // Initial image display (all images)
-    const allImages = await searchScreenshots('');
-    displayImages(allImages);
+    let allImages = await searchScreenshots('');
+    displayDailyGroups(allImages);
 
     // Function to display images in the grid
     async function displayImages(images) {
@@ -108,6 +112,40 @@ document.addEventListener('DOMContentLoaded', async () => {
             imgElement.className = 'w-full rounded shadow-md';
             imageGrid.appendChild(imgElement);
         }
+    }
+
+    function displayDailyGroups(images) {
+        dailyGroups.innerHTML = '';
+        const grouped = groupByDate(images);
+
+        for (const date in grouped) {
+            const dateHeading = document.createElement('h2');
+            dateHeading.textContent = date;
+            dateHeading.className = 'text-xl font-bold mb-2 mt-4';
+            dailyGroups.appendChild(dateHeading);
+
+            const grid = document.createElement('div');
+            grid.className = 'grid gap-4';
+            grouped[date].forEach(image => {
+                const imgElement = document.createElement('img');
+                imgElement.src = image.url;
+                imgElement.alt = image.ocrText;
+                imgElement.className = 'w-full rounded shadow-md';
+                grid.appendChild(imgElement);
+            });
+            dailyGroups.appendChild(grid);
+        }
+    }
+
+    function groupByDate(images) {
+        return images.reduce((groups, image) => {
+            const date = image.timestamp.slice(0, 10);
+            if (!groups[date]) {
+                groups[date] = [];
+            }
+            groups[date].push(image);
+            return groups;
+        }, {});
     }
 
     // Schedule retention check

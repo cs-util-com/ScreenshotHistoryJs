@@ -7,6 +7,7 @@ async function selectFolder() {
         return directoryHandle.path;
     } catch (error) {
         console.error('Error selecting folder:', error);
+        alert('Failed to select folder. Please try again.');
         return null;
     }
 }
