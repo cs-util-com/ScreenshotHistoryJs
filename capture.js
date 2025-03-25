@@ -32,7 +32,8 @@ async function startCapture() {
                 const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
 
                 // Compare with the last image
-                if (lastImageData && !compareScreenshots(imageData, lastImageData)) {
+                const diffThreshold = localStorage.getItem('diffThreshold') || 3;
+                if (lastImageData && !compareScreenshots(imageData, lastImageData, diffThreshold / 100)) {
                     console.log('Screenshots are similar, skipping save.');
                     return;
                 }
@@ -40,8 +41,9 @@ async function startCapture() {
                 lastImageData = imageData; // Update the last image data
 
                 const timestamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 14);
+                const imageQuality = localStorage.getItem('imageQuality') || 80;
                 const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-                const jpgBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8)); // Adjust quality as needed
+                const jpgBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', imageQuality / 100)); // Adjust quality as needed
 
                 await saveScreenshot(pngBlob, jpgBlob, timestamp);
 

@@ -35,6 +35,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const folderPathDisplay = document.getElementById('folderPath');
     const searchInput = document.getElementById('search');
     const imageGrid = document.getElementById('imageGrid');
+    const settingsModal = document.getElementById('settingsModal');
+    const openSettingsButton = document.getElementById('openSettings');
+    const closeSettingsButton = document.getElementById('closeSettings');
+    const saveSettingsButton = document.getElementById('saveSettings');
 
     // Load folder path from local storage
     const folderPath = await getFolderPath();
@@ -43,8 +47,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Event listeners
-    startCaptureButton.addEventListener('click', startCapture);
-    pauseCaptureButton.addEventListener('click', pauseCapture);
+    startCaptureButton.addEventListener('click', () => {
+        startCapture();
+        startCaptureButton.classList.add('hidden');
+        pauseCaptureButton.classList.remove('hidden');
+    });
+
+    pauseCaptureButton.addEventListener('click', () => {
+        pauseCapture();
+        pauseCaptureButton.classList.add('hidden');
+        startCaptureButton.classList.remove('hidden');
+    });
+
     selectFolderButton.addEventListener('click', async () => {
         const path = await selectFolder();
         folderPathDisplay.textContent = path;
@@ -54,6 +68,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         const searchTerm = event.target.value;
         const results = await searchScreenshots(searchTerm);
         displayImages(results);
+    });
+
+    // Settings Modal event listeners
+    openSettingsButton.addEventListener('click', () => {
+        settingsModal.classList.remove('hidden');
+    });
+
+    closeSettingsButton.addEventListener('click', () => {
+        settingsModal.classList.add('hidden');
+    });
+
+    saveSettingsButton.addEventListener('click', () => {
+        // Save settings to local storage
+        const imageQuality = document.getElementById('imageQuality').value;
+        const diffThreshold = document.getElementById('diffThreshold').value;
+        const retentionPeriod = document.getElementById('retentionPeriod').value;
+        const ocrLanguage = document.getElementById('ocrLanguage').value;
+
+        localStorage.setItem('imageQuality', imageQuality);
+        localStorage.setItem('diffThreshold', diffThreshold);
+        localStorage.setItem('retentionPeriod', retentionPeriod);
+        localStorage.setItem('ocrLanguage', ocrLanguage);
+
+        settingsModal.classList.add('hidden');
     });
 
     // Initial image display (all images)
