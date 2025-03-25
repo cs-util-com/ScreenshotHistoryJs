@@ -17,7 +17,7 @@ We’re creating a **browser-based**, **offline-capable** web app that:
 -   Stores and indexes all data locally to enable **keyword search** via a **Google Photos–style** interface.
     
 
-This app must handle everything entirely within the browser, relying on:
+This app handles everything entirely within the browser, relying on:
 
 -   `getDisplayMedia` for screen capture (user must grant permission).
     
@@ -43,6 +43,8 @@ This app must handle everything entirely within the browser, relying on:
 2.  **Permission Flow**: Use `getDisplayMedia` to request screen sharing.
     
     -   The user must select which screen/window to share.
+        
+    -   If the user wants to change screens, they must reload the page.
         
     -   If the user wants to change screens, they must reload the page.
         
@@ -215,17 +217,23 @@ This app must handle everything entirely within the browser, relying on:
     
     -   `getDisplayMedia` usage, 5-second interval, pixel diff check, save final screenshot.
         
+    -   Implemented in `/workspaces/ScreenshotHistoryJs/capture.js`
+        
 2.  **File Access Module**
     
     -   Manages folder permissions.
         
     -   Writes final screenshot (JPG/PNG) + Dexie JSON exports.
         
+    -   Implemented in `/workspaces/ScreenshotHistoryJs/fileAccess.js`
+        
 3.  **Diffing & Image Processing**
     
     -   Use a library like **pixelmatch** for approximate pixel comparison.
         
     -   Maintain last screenshot in memory for diff checks.
+        
+    -   Implemented in `/workspaces/ScreenshotHistoryJs/diffing.js`
         
 4.  **OCR Module**
     
@@ -235,6 +243,8 @@ This app must handle everything entirely within the browser, relying on:
         
     -   Stores recognized text in Dexie.
         
+    -   Implemented in `/workspaces/ScreenshotHistoryJs/ocr.js`
+        
 5.  **Summarization Module**
     
     -   LangChain for LLM communication.
@@ -243,11 +253,15 @@ This app must handle everything entirely within the browser, relying on:
         
     -   Logs errors if they occur; no retry.
         
+    -   Implemented in `/workspaces/ScreenshotHistoryJs/summarization.js`
+        
 6.  **Storage Module** (Dexie)
     
     -   Tables for `screenshots`, `ocrText`, `summaries`, `settings`.
         
     -   Export daily snapshot as JSON.
+        
+    -   Implemented in `/workspaces/ScreenshotHistoryJs/storage.js`
         
 7.  **UI Module**
     
@@ -265,9 +279,13 @@ This app must handle everything entirely within the browser, relying on:
         
     -   **Folder path display**.
         
+    -   Implemented in `/workspaces/ScreenshotHistoryJs/ui.js`, `/workspaces/ScreenshotHistoryJs/index.html`, and `/workspaces/ScreenshotHistoryJs/style.css`
+        
 8.  **Retention Module**
     
     -   Periodic check (e.g., on app load or daily) to remove items older than X days (default 90).
+        
+    -   Implemented in `/workspaces/ScreenshotHistoryJs/retention.js`
         
 9.  **PWA Module**
     
@@ -276,6 +294,8 @@ This app must handle everything entirely within the browser, relying on:
     -   Service worker for offline caching.
         
     -   Should allow the app to keep running if the tab is active or in the background (though background reliability can vary by browser).
+        
+    -   Implemented in `/workspaces/ScreenshotHistoryJs/service-worker.js` and `/workspaces/ScreenshotHistoryJs/manifest.json`
         
 
 ----------
@@ -389,29 +409,35 @@ This app must handle everything entirely within the browser, relying on:
 
 1.  **Scaffolding & Setup**
     
-    -   Initialize a plain JS or TypeScript project with Tailwind, Dexie, Tesseract.js, and LangChain.
+    -   ~~Initialize a plain JS or TypeScript project with Tailwind, Dexie, Tesseract.js, and LangChain.~~
         
-    -   Include necessary build tools (e.g., Webpack, Vite, or similar).
+    -   ~~Include necessary build tools (e.g., Webpack, Vite, or similar).~~
+        
+        Completed.
         
 2.  **Prototypes**
     
-    -   Confirm basic `getDisplayMedia` capture.
+    -   ~~Confirm basic `getDisplayMedia` capture.~~
         
-    -   Save screenshots to the local folder.
+    -   ~~Save screenshots to the local folder.~~
         
-    -   Perform a simple pixel diff check.
+    -   ~~Perform a simple pixel diff check.~~
         
-    -   Perform basic OCR, store text in Dexie.
+    -   ~~Perform basic OCR, store text in Dexie.~~
+        
+        Completed.
         
 3.  **UI & PWA**
     
-    -   Build out the grid interface, daily grouping, infinite scroll.
+    -   ~~Build out the grid interface, daily grouping, infinite scroll.~~
         
-    -   Add the record/pause button.
+    -   ~~Add the record/pause button.~~
         
-    -   Implement the settings modal and retention logic.
+    -   ~~Implement the settings modal and retention logic.~~
         
-    -   Configure a service worker for offline support.
+    -   ~~Configure a service worker for offline support.~~
+        
+        Completed.
         
 4.  **Testing**
     
@@ -426,15 +452,15 @@ This app must handle everything entirely within the browser, relying on:
 
 This specification captures **all** of the core decisions we made, from screenshot intervals to PWA behavior. A developer can now proceed with:
 
-1.  **Setup** (dependencies, folder structure).
+1.  ~~Setup (dependencies, folder structure).~~
     
-2.  **Module-by-module implementation** (Capture, OCR, Summarization, UI).
+2.  ~~Module-by-module implementation (Capture, OCR, Summarization, UI).~~
     
-3.  **Testing** (unit, integration, manual).
+3.  Testing (unit, integration, manual).
     
-4.  **UI polishing** (Tailwind, dark mode, daily grouping, search).
+4.  ~~UI polishing (Tailwind, dark mode, daily grouping, search).~~
     
-5.  **Deployment** (service worker, PWA manifest, hosting if desired, though it runs locally).
+5.  ~~Deployment (service worker, PWA manifest, hosting if desired, though it runs locally).~~
     
 
 Following this spec ensures each requirement is met in the final solution.
