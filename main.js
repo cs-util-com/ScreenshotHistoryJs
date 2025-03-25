@@ -258,8 +258,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     function groupByDate(items) {
         return items.reduce((groups, item) => {
             // Get date from timestamp or endTime
-            const timestamp = item.timestamp || item.endTime;
-            const date = timestamp.split('T')[0];
+            let timestamp = item.timestamp || item.endTime;
+            if (!timestamp) {
+                console.warn('Item missing timestamp:', item);
+                return groups;
+            }
+            
+            // Ensure we have a valid date string format
+            let date = '';
+            try {
+                // Handle ISO string or other formats
+                if (timestamp.includes('T')) {
+                    date = timestamp.split('T')[0];
+                } else {
+                    // Try to extract YYYY-MM-DD format
+                    const match = timestamp.match(/^(\d{4})(\d{2})(\d{2})/);
+                    if (match) {
+                        date = `${match[1]}-${match[2]}-${match[3]}`;
+                    } else {
+                        // Use current date as fallback
+                        date = new Date().toISOString().split('T')[0];
+                    }
+                }
+            } catch (error) {
+                console.error('Error parsing date from timestamp:', timestamp, error);
+                // Use current date as fallback
+                date = new Date().toISOString().split('T')[0];
+            }
             
             if (!groups[date]) {
                 groups[date] = [];
@@ -271,22 +296,69 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Format date for display
     function formatDate(dateStr) {
-        const date = new Date(dateStr);
-        return new Intl.DateTimeFormat('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        }).format(date);
+        try {
+            // Handle different date formats
+            let date;
+            if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                // YYYY-MM-DD format
+                date = new Date(dateStr + 'T00:00:00Z');
+            } else {
+                // Try parsing directly
+                date = new Date(dateStr);
+            }
+            
+            // Check if the date is valid
+            if (isNaN(date.getTime())) {
+                throw new Error('Invalid date');
+            }
+            
+            return new Intl.DateTimeFormat('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            }).format(date);
+        } catch (error) {
+            console.error('Error formatting date:', dateStr, error);
+            return dateStr; // Fall back to showing the raw date string
+        }
     }
 
     // Format time for display
     function formatTime(timestamp) {
-        const date = new Date(timestamp);
-        return date.toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit'
-        });
+        try {
+            let date;
+            if (typeof timestamp === 'string') {
+                if (timestamp.includes('T')) {
+                    // ISO format
+                    date = new Date(timestamp);
+                } else {
+                    // Try to parse YYYYMMDDHHMMSS format
+                    const year = timestamp.substring(0, 4);
+                    const month = timestamp.substring(4, 6);
+                    const day = timestamp.substring(6, 8);
+                    const hour = timestamp.substring(8, 10);
+                    const minute = timestamp.substring(10, 12);
+                    const second = timestamp.substring(12, 14);
+                    
+                    date = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
+                }
+            } else {
+                date = new Date(timestamp);
+            }
+            
+            if (isNaN(date.getTime())) {
+                throw new Error('Invalid date');
+            }
+            
+            return date.toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        } catch (error) {
+            console.error('Error formatting time:', timestamp, error);
+            return typeof timestamp === 'string' ? timestamp : 'Unknown time';
+        }
     }
 
     // Truncate text to specified length

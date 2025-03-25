@@ -21,8 +21,11 @@ additional explanations what you change are nice to have but not necessary.
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Screenshot History</title>
   <link href="style.css" rel="stylesheet">
-  <link rel="manifest" href="manifest.json">
-  <!-- Favicon: A white box --> <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23fff'/%3E%3C/svg%3E" type="image/svg+xml">
+  <link rel="manifest" href="./manifest.json">
+  <!-- Favicon: A white box --> 
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23fff'/%3E%3C/svg%3E" type="image/svg+xml">
+  <!-- Create placeholder app icons -->
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%23111827'/%3E%3Ctext x='50%25' y='50%25' font-size='160' text-anchor='middle' dy='.35em' fill='white' font-family='sans-serif'%3ESH%3C/text%3E%3C/svg%3E">
   <!-- Added Tailwind CSS via CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
@@ -197,5 +200,15 @@ additional explanations what you change are nice to have but not necessary.
   <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.2/dist/dexie.min.js"></script>
   <script src="https://unpkg.com/tesseract.js@v4.0.0/dist/tesseract.min.js"></script>
   <script src="main.js" type="module"></script>
+  <script>
+    // Add error handler for Tesseract.js language loading
+    window.addEventListener('error', function(e) {
+      if (e.message && e.message.includes('tessdata.projectnaptha.com')) {
+        console.warn('Tesseract language loading error intercepted. Will attempt fallback.');
+        // The OCR module will handle fallbacks
+        e.preventDefault();
+      }
+    }, true);
+  </script>
 </body>
 </html>
