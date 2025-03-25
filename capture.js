@@ -76,6 +76,7 @@ function stopCapture() {
         mediaStream = null;
     }
     lastImageData = null;
+    localStorage.setItem('capturingActive', 'false');
 }
 
 export {

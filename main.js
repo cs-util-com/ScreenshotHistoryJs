@@ -42,6 +42,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const folderDisplay = document.getElementById('folderDisplay');
     const dailyGroups = document.getElementById('dailyGroups');
 
+    // Load settings from local storage
+    const imageQuality = localStorage.getItem('imageQuality') || 80;
+    const diffThreshold = localStorage.getItem('diffThreshold') || 3;
+    const retentionPeriod = localStorage.getItem('retentionPeriod') || 90;
+    const ocrLanguage = localStorage.getItem('ocrLanguage') || 'eng';
+
+    document.getElementById('imageQuality').value = imageQuality;
+    document.getElementById('diffThreshold').value = diffThreshold;
+    document.getElementById('retentionPeriod').value = retentionPeriod;
+    document.getElementById('ocrLanguage').value = ocrLanguage;
+
     // Load folder path from local storage
     const folderPath = await getFolderPath();
     if (folderPath) {
@@ -49,17 +60,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         folderDisplay.textContent = `Current folder: ${folderPath}`;
     }
 
+    // Check if capturing was active before reload
+    const capturingActive = localStorage.getItem('capturingActive') === 'true';
+    if (capturingActive) {
+        startCapture();
+        startCaptureButton.classList.add('hidden');
+        pauseCaptureButton.classList.remove('hidden');
+    }
+
     // Event listeners
     startCaptureButton.addEventListener('click', () => {
         startCapture();
         startCaptureButton.classList.add('hidden');
         pauseCaptureButton.classList.remove('hidden');
+        localStorage.setItem('capturingActive', 'true');
     });
 
     pauseCaptureButton.addEventListener('click', () => {
         pauseCapture();
         pauseCaptureButton.classList.add('hidden');
         startCaptureButton.classList.remove('hidden');
+        localStorage.setItem('capturingActive', 'false');
     });
 
     selectFolderButton.addEventListener('click', async () => {
@@ -102,17 +123,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let allImages = await searchScreenshots('');
     displayDailyGroups(allImages);
 
-    // Function to display images in the grid
-    async function displayImages(images) {
-        imageGrid.innerHTML = '';
-        for (const image of images) {
-            const imgElement = document.createElement('img');
-            imgElement.src = image.url;
-            imgElement.alt = image.ocrText;
-            imgElement.className = 'w-full rounded shadow-md';
-            imageGrid.appendChild(imgElement);
-        }
-    }
+    let displayedImagesCount = 0;
+    const imagesPerLoad = 10;
 
     function displayDailyGroups(images) {
         dailyGroups.innerHTML = '';
@@ -126,13 +138,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const grid = document.createElement('div');
             grid.className = 'grid gap-4';
-            grouped[date].forEach(image => {
+            let i = 0;
+            while (i < imagesPerLoad && displayedImagesCount < images.length) {
                 const imgElement = document.createElement('img');
-                imgElement.src = image.url;
-                imgElement.alt = image.ocrText;
+                imgElement.src = images[displayedImagesCount].url;
+                imgElement.alt = images[displayedImagesCount].ocrText;
                 imgElement.className = 'w-full rounded shadow-md';
                 grid.appendChild(imgElement);
-            });
+                displayedImagesCount++;
+                i++;
+            }
             dailyGroups.appendChild(grid);
         }
     }
@@ -146,6 +161,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             groups[date].push(image);
             return groups;
         }, {});
+    }
+
+    window.addEventListener('scroll', () => {
+        if (window.innerHeight + window.scrollY >= document.body.offsetHeight) {
+            loadMoreImages();
+        }
+    });
+
+    async function loadMoreImages() {
+        let allImages = await searchScreenshots('');
+        displayDailyGroups(allImages);
     }
 
     // Schedule retention check
