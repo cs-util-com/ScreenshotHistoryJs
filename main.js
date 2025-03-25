@@ -4,7 +4,9 @@ import {
 } from './capture.js';
 import {
     selectFolder,
-    getFolderPath
+    getFolderPath,
+    restoreDirectoryHandle,
+    getDirectoryHandle
 } from './fileAccess.js';
 import {
     initDB,
@@ -65,12 +67,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('claudeApiKey').value = claudeApiKey;
     document.getElementById('localModelUrl').value = localModelUrl;
 
-    // Load folder path from local storage
+    // Load folder path from local storage and check if we need to restore directory handle
     const folderPath = await getFolderPath();
+    const hasDirectoryHandle = await restoreDirectoryHandle();
+    
     if (folderPath) {
         folderPathDisplay.textContent = folderPath;
         folderDisplay.textContent = `Current folder: ${folderPath}`;
-        openFolderButton.classList.remove('hidden');
+        
+        if (hasDirectoryHandle) {
+            openFolderButton.classList.remove('hidden');
+        } else {
+            // We have a path saved but no directoryHandle
+            folderDisplay.textContent = `Current folder: ${folderPath} (Click "Select Folder" to restore access)`;
+        }
     }
 
     // Check if capturing was active before reload
@@ -97,14 +107,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     selectFolderButton.addEventListener('click', async () => {
-        const path = await selectFolder();
-        if (path) {
-            folderPathDisplay.textContent = path;
-            folderDisplay.textContent = `Current folder: ${path}`;
+        const folderName = await selectFolder();
+        if (folderName) {
+            folderPathDisplay.textContent = folderName;
+            folderDisplay.textContent = `Current folder: ${folderName}`;
             openFolderButton.classList.remove('hidden');
             
             // Export the database to the new folder
-            const dirHandle = await window.directoryHandle;
+            const dirHandle = await getDirectoryHandle();
             if (dirHandle) {
                 await exportDBToJson(dirHandle);
             }
@@ -173,6 +183,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     function displayDailyGroups(items) {
         dailyGroups.innerHTML = '';
         
+        if (!items || items.length === 0) {
+            dailyGroups.innerHTML = '<div class="text-center py-10 text-gray-500">No items to display. Start capturing to see screenshots here.</div>';
+            return;
+        }
+        
         // Group items by date
         const grouped = groupByDate(items);
         
@@ -203,6 +218,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     img.src = item.url;
                     img.alt = item.ocrText || 'Screenshot';
                     img.className = 'w-full h-40 object-cover';
+                    
+                    // Handle broken images
+                    img.onerror = () => {
+                        img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"%3E%3Crect width="200" height="200" fill="%23333"%3E%3C/rect%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="20" fill="%23fff"%3EImage not available%3C/text%3E%3C/svg%3E';
+                        img.alt = 'Image not available';
+                    }
                     
                     const textContainer = document.createElement('div');
                     textContainer.className = 'px-4 py-2';

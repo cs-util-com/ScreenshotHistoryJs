@@ -1,4 +1,4 @@
-import { selectFolder } from './fileAccess.js';
+import { selectFolder, getDirectoryHandle } from './fileAccess.js';
 
 let db;
 let exportIntervalId;
@@ -128,7 +128,13 @@ async function exportDBToJson(directoryHandle) {
         const summaries = await db.summaries.toArray();
         
         const exportData = {
-            screenshots,
+            screenshots: screenshots.map(s => ({
+                ...s,
+                // Don't include the actual blob URLs in the export
+                url: null,
+                timestamp: s.timestamp,
+                ocrText: s.ocrText
+            })),
             summaries,
             exportDate: new Date().toISOString()
         };
@@ -161,32 +167,15 @@ function scheduleDailyExport() {
         clearInterval(exportIntervalId);
     }
     
-    exportIntervalId = setInterval(() => {
+    exportIntervalId = setInterval(async () => {
         // Get the directory handle and export
-        getDirectoryHandle().then(dirHandle => {
-            if (dirHandle) {
-                exportDBToJson(dirHandle);
-            }
-        });
-    }, EXPORT_INTERVAL);
-}
-
-// Get directory handle from File System Access API
-async function getDirectoryHandle() {
-    try {
-        // Try to use the saved directory handle if available
-        const savedDirHandle = localStorage.getItem('directoryHandle');
-        if (savedDirHandle) {
-            return savedDirHandle;
+        const dirHandle = await getDirectoryHandle();
+        if (dirHandle) {
+            await exportDBToJson(dirHandle);
+        } else {
+            console.log('No directory handle available for auto-export');
         }
-        
-        // If not available, prompt user to select a directory
-        console.log('No saved directory handle found, prompting user to select directory');
-        return await selectFolder();
-    } catch (error) {
-        console.error('Error getting directory handle:', error);
-        return null;
-    }
+    }, EXPORT_INTERVAL);
 }
 
 export {

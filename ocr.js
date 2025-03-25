@@ -5,7 +5,7 @@ import {
 // Cache for language loading status to avoid repeated errors
 const languageLoadAttempts = {};
 
-async function performOCR(imageBlob, timestamp) {
+async function performOCR(imageBlob, timestamp, imageUrl) {
     try {
         // Get OCR language from local storage or use browser language
         const ocrLanguage = localStorage.getItem('ocrLanguage') || 
@@ -22,7 +22,7 @@ async function performOCR(imageBlob, timestamp) {
             } else {
                 // If English also failed, store the screenshot without OCR
                 console.error('Cannot perform OCR: language data unavailable');
-                await addScreenshot(timestamp, URL.createObjectURL(imageBlob), '');
+                await addScreenshot(timestamp, imageUrl || URL.createObjectURL(imageBlob), '');
                 return;
             }
         }
@@ -46,7 +46,7 @@ async function performOCR(imageBlob, timestamp) {
             const text = data.text;
             
             console.log('OCR Result:', text.length > 100 ? text.substring(0, 100) + '...' : text);
-            await addScreenshot(timestamp, URL.createObjectURL(imageBlob), text);
+            await addScreenshot(timestamp, imageUrl || URL.createObjectURL(imageBlob), text);
             
             // Terminate worker to free memory
             await worker.terminate();
@@ -69,15 +69,15 @@ async function performOCR(imageBlob, timestamp) {
                     
                     console.log('OCR Result (fallback to English):', 
                                 text.length > 100 ? text.substring(0, 100) + '...' : text);
-                    await addScreenshot(timestamp, URL.createObjectURL(imageBlob), text);
+                    await addScreenshot(timestamp, imageUrl || URL.createObjectURL(imageBlob), text);
                     
                 } catch (engError) {
                     console.error('Failed to perform OCR with English fallback:', engError);
                     languageLoadAttempts['eng'] = 'failed';
-                    await addScreenshot(timestamp, URL.createObjectURL(imageBlob), '');
+                    await addScreenshot(timestamp, imageUrl || URL.createObjectURL(imageBlob), '');
                 }
             } else {
-                await addScreenshot(timestamp, URL.createObjectURL(imageBlob), '');
+                await addScreenshot(timestamp, imageUrl || URL.createObjectURL(imageBlob), '');
             }
             
             // Clean up
@@ -87,7 +87,7 @@ async function performOCR(imageBlob, timestamp) {
     } catch (error) {
         console.error('OCR Error:', error);
         // Even if OCR fails, store the screenshot with empty text
-        await addScreenshot(timestamp, URL.createObjectURL(imageBlob), '');
+        await addScreenshot(timestamp, imageUrl || URL.createObjectURL(imageBlob), '');
     }
 }
 
