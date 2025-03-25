@@ -40,12 +40,15 @@ async function startCapture() {
 
                 lastImageData = imageData; // Update the last image data
 
-                const timestamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 14);
+                // Generate a clean timestamp for database storage (ISO format)
+                const dbTimestamp = new Date().toISOString();
+                
                 const imageQuality = localStorage.getItem('imageQuality') || 80;
                 const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-                const jpgBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', imageQuality / 100)); // Adjust quality as needed
+                const jpgBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', imageQuality / 100));
 
-                await saveScreenshot(pngBlob, jpgBlob, timestamp);
+                // Pass the ISO timestamp to saveScreenshot which will format it for filenames
+                await saveScreenshot(pngBlob, jpgBlob, dbTimestamp);
 
             } catch (error) {
                 console.error('Error capturing screenshot:', error);

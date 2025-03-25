@@ -214,16 +214,40 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // Check if this is a screenshot or a summary
                 if (item.url) {
                     // It's a screenshot
+                    const imgContainer = document.createElement('div');
+                    imgContainer.className = 'h-40 relative bg-gray-700 flex items-center justify-center';
+                    
                     const img = document.createElement('img');
                     img.src = item.url;
                     img.alt = item.ocrText || 'Screenshot';
-                    img.className = 'w-full h-40 object-cover';
+                    img.className = 'max-h-full max-w-full object-contain';
                     
-                    // Handle broken images
-                    img.onerror = () => {
-                        img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"%3E%3Crect width="200" height="200" fill="%23333"%3E%3C/rect%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="20" fill="%23fff"%3EImage not available%3C/text%3E%3C/svg%3E';
-                        img.alt = 'Image not available';
-                    }
+                    // Display a loading indicator while the image loads
+                    const loadingIndicator = document.createElement('div');
+                    loadingIndicator.className = 'absolute inset-0 flex items-center justify-center';
+                    loadingIndicator.innerHTML = '<span class="animate-pulse">Loading...</span>';
+                    
+                    // Handle successful image loading
+                    img.onload = () => {
+                        loadingIndicator.remove();
+                        console.log("Image loaded successfully:", item.url);
+                    };
+                    
+                    // Handle image loading failure
+                    img.onerror = (e) => {
+                        console.error("Failed to load image:", item.url, e);
+                        loadingIndicator.innerHTML = "Image not available";
+                        
+                        // Try to recreate the blob URL if possible
+                        if (window._savedBlobs && window._savedBlobs[item.timestamp]) {
+                            console.log("Attempting to recreate blob URL from saved blob");
+                            const newUrl = URL.createObjectURL(window._savedBlobs[item.timestamp]);
+                            img.src = newUrl;
+                        }
+                    };
+                    
+                    imgContainer.appendChild(loadingIndicator);
+                    imgContainer.appendChild(img);
                     
                     const textContainer = document.createElement('div');
                     textContainer.className = 'px-4 py-2';
@@ -239,10 +263,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     textContainer.appendChild(time);
                     textContainer.appendChild(text);
                     
-                    gridItem.appendChild(img);
+                    gridItem.appendChild(imgContainer);
                     gridItem.appendChild(textContainer);
                 } else {
-                    // It's a summary
+                    // It's a summary - leave this part unchanged
                     gridItem.className += ' summary-tile bg-blue-900 text-white';
                     
                     const summaryContainer = document.createElement('div');

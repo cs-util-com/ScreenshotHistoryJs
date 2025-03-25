@@ -7,11 +7,18 @@ const languageLoadAttempts = {};
 
 async function performOCR(imageBlob, timestamp, imageUrl) {
     try {
+        // Ensure we have a valid imageUrl
+        const finalImageUrl = imageUrl || URL.createObjectURL(imageBlob);
+        
+        // Store the blob in the global storage to prevent garbage collection
+        if (!window._savedBlobs) window._savedBlobs = {};
+        window._savedBlobs[timestamp] = imageBlob.slice(0);
+        
         // Get OCR language from local storage or use browser language
         const ocrLanguage = localStorage.getItem('ocrLanguage') || 
             (navigator.language && navigator.language.split('-')[0]) || 'eng';
             
-        console.log(`Performing OCR in language: ${ocrLanguage}`);
+        console.log(`Performing OCR in language: ${ocrLanguage} for image: ${finalImageUrl}`);
         
         // Check if we've already failed to load this language
         if (languageLoadAttempts[ocrLanguage] === 'failed') {
@@ -22,7 +29,7 @@ async function performOCR(imageBlob, timestamp, imageUrl) {
             } else {
                 // If English also failed, store the screenshot without OCR
                 console.error('Cannot perform OCR: language data unavailable');
-                await addScreenshot(timestamp, imageUrl || URL.createObjectURL(imageBlob), '');
+                await addScreenshot(timestamp, finalImageUrl, '');
                 return;
             }
         }
@@ -46,7 +53,7 @@ async function performOCR(imageBlob, timestamp, imageUrl) {
             const text = data.text;
             
             console.log('OCR Result:', text.length > 100 ? text.substring(0, 100) + '...' : text);
-            await addScreenshot(timestamp, imageUrl || URL.createObjectURL(imageBlob), text);
+            await addScreenshot(timestamp, finalImageUrl, text);
             
             // Terminate worker to free memory
             await worker.terminate();
@@ -69,15 +76,15 @@ async function performOCR(imageBlob, timestamp, imageUrl) {
                     
                     console.log('OCR Result (fallback to English):', 
                                 text.length > 100 ? text.substring(0, 100) + '...' : text);
-                    await addScreenshot(timestamp, imageUrl || URL.createObjectURL(imageBlob), text);
+                    await addScreenshot(timestamp, finalImageUrl, text);
                     
                 } catch (engError) {
                     console.error('Failed to perform OCR with English fallback:', engError);
                     languageLoadAttempts['eng'] = 'failed';
-                    await addScreenshot(timestamp, imageUrl || URL.createObjectURL(imageBlob), '');
+                    await addScreenshot(timestamp, finalImageUrl, '');
                 }
             } else {
-                await addScreenshot(timestamp, imageUrl || URL.createObjectURL(imageBlob), '');
+                await addScreenshot(timestamp, finalImageUrl, '');
             }
             
             // Clean up
@@ -87,7 +94,7 @@ async function performOCR(imageBlob, timestamp, imageUrl) {
     } catch (error) {
         console.error('OCR Error:', error);
         // Even if OCR fails, store the screenshot with empty text
-        await addScreenshot(timestamp, imageUrl || URL.createObjectURL(imageBlob), '');
+        await addScreenshot(timestamp, finalImageUrl, '');
     }
 }
 

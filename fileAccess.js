@@ -63,45 +63,87 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
     }
 
     try {
-        const pngFile = await directoryHandle.getFileHandle(`${timestamp}.png`, {
-            create: true
-        });
-        const jpgFile = await directoryHandle.getFileHandle(`${timestamp}.jpg`, {
-            create: true
-        });
-
-        await writeFile(pngFile, pngBlob);
-        await writeFile(jpgFile, jpgBlob);
-
-        // Delete the larger file
-        if (pngBlob.size > jpgBlob.size) {
-            await directoryHandle.removeEntry(`${timestamp}.png`);
-            console.log('Deleted PNG, keeping JPG.');
+        // Format timestamp for more readable filenames (YYYY-MM-DD-HH-MM-SS)
+        // Make sure we don't have any invalid characters like colons or dots in the filename
+        const formattedTimestamp = timestamp
+            .replace(/:/g, '-')
+            .replace(/\./g, '-')
+            .replace('Z', '')
+            .replace('T', '_');
             
-            // Create an object URL for the screenshot
-            const imageUrl = URL.createObjectURL(jpgBlob);
+        console.log('Formatted timestamp for filename:', formattedTimestamp);
+        
+        const pngFilename = `screenshot_${formattedTimestamp}.png`;
+        const jpgFilename = `screenshot_${formattedTimestamp}.jpg`;
+        
+        console.log('Saving files with names:', pngFilename, jpgFilename);
             
-            // Perform OCR
-            import('./ocr.js').then(ocr => {
-                ocr.performOCR(jpgBlob, timestamp, imageUrl);
-            });
-        } else {
-            await directoryHandle.removeEntry(`${timestamp}.jpg`);
-            console.log('Deleted JPG, keeping PNG.');
-            
-            // Create an object URL for the screenshot
-            const imageUrl = URL.createObjectURL(pngBlob);
-            
-            // Perform OCR
-            import('./ocr.js').then(ocr => {
-                ocr.performOCR(pngBlob, timestamp, imageUrl);
-            });
+        let pngFile, jpgFile;
+        try {
+            pngFile = await directoryHandle.getFileHandle(pngFilename, { create: true });
+        } catch (e) {
+            console.error('Error creating PNG file:', e);
+            throw e;
+        }
+        
+        try {
+            jpgFile = await directoryHandle.getFileHandle(jpgFilename, { create: true });
+        } catch (e) {
+            console.error('Error creating JPG file:', e);
+            throw e;
         }
 
-        console.log('Screenshot saved.');
+        try {
+            await writeFile(pngFile, pngBlob);
+            await writeFile(jpgFile, jpgBlob);
+        } catch (e) {
+            console.error('Error writing file content:', e);
+            throw e;
+        }
+
+        // Create a permanent object URL that won't be garbage collected
+        let imageUrl;
+        let savedBlob;
+        
+        // Delete the larger file
+        if (pngBlob.size > jpgBlob.size) {
+            try {
+                await directoryHandle.removeEntry(pngFilename);
+                console.log('Deleted PNG, keeping JPG.');
+                savedBlob = jpgBlob.slice(0); // Create a copy of the blob
+                imageUrl = URL.createObjectURL(savedBlob);
+            } catch (e) {
+                console.error('Error removing PNG file:', e);
+            }
+        } else {
+            try {
+                await directoryHandle.removeEntry(jpgFilename);
+                console.log('Deleted JPG, keeping PNG.');
+                savedBlob = pngBlob.slice(0); // Create a copy of the blob
+                imageUrl = URL.createObjectURL(savedBlob);
+            } catch (e) {
+                console.error('Error removing JPG file:', e);
+            }
+        }
+
+        // Store a reference to the blob to prevent garbage collection
+        if (!window._savedBlobs) window._savedBlobs = {};
+        window._savedBlobs[timestamp] = savedBlob;
+        
+        console.log('Screenshot saved successfully. Image URL created:', imageUrl);
+
+        // Perform OCR
+        try {
+            const ocr = await import('./ocr.js');
+            const blobToUse = pngBlob.size > jpgBlob.size ? jpgBlob : pngBlob;
+            await ocr.performOCR(blobToUse, timestamp, imageUrl);
+        } catch (e) {
+            console.error('Error during OCR:', e);
+        }
 
     } catch (error) {
         console.error('Error saving screenshot:', error);
+        console.error('Timestamp that caused error:', timestamp);
     }
 }
 
