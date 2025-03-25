@@ -176,4 +176,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Schedule retention check
     scheduleRetentionCheck();
+
+    // Schedule summarization
+    scheduleSummarization();
+
+    async function performSummarization() {
+        try {
+            const now = new Date();
+            const startTime = new Date(now.getTime() - 40 * 60 * 1000); // 40 minutes ago
+            const endTime = new Date(now.getTime() - 20 * 60 * 1000); // 20 minutes ago
+
+            const screenshots = await db.screenshots
+                .where('timestamp')
+                .between(startTime.toISOString(), endTime.toISOString())
+                .toArray();
+
+            if (screenshots.length === 0) {
+                console.log('No screenshots to summarize.');
+                return;
+            }
+
+            const ocrText = screenshots.map(s => s.ocrText).join('\n');
+            const timestamps = screenshots.map(s => s.timestamp);
+
+            await generateSummary(ocrText, timestamps);
+        } catch (error) {
+            console.error('Error performing summarization:', error);
+        }
+    }
+
+    function scheduleSummarization() {
+        // Run the summarization every 30 minutes
+        performSummarization();
+        setInterval(performSummarization, 30 * 60 * 1000);
+    }
 });
