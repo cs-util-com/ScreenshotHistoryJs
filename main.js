@@ -9,7 +9,8 @@ import {
 import {
     initDB,
     addScreenshot,
-    searchScreenshots
+    searchScreenshots,
+    exportDBToJson
 } from './storage.js';
 import {
     performOCR
@@ -26,38 +27,50 @@ import {
 
 document.addEventListener('DOMContentLoaded', async () => {
     // Initialize Dexie database
-    await initDB();
+    const db = await initDB();
 
     // UI elements
     const startCaptureButton = document.getElementById('startCapture');
     const pauseCaptureButton = document.getElementById('pauseCapture');
     const selectFolderButton = document.getElementById('selectFolder');
+    const openFolderButton = document.getElementById('openFolder');
     const folderPathDisplay = document.getElementById('folderPath');
     const searchInput = document.getElementById('search');
-    const imageGrid = document.getElementById('imageGrid');
+    const dailyGroups = document.getElementById('dailyGroups');
     const settingsModal = document.getElementById('settingsModal');
     const openSettingsButton = document.getElementById('openSettings');
     const closeSettingsButton = document.getElementById('closeSettings');
     const saveSettingsButton = document.getElementById('saveSettings');
     const folderDisplay = document.getElementById('folderDisplay');
-    const dailyGroups = document.getElementById('dailyGroups');
 
     // Load settings from local storage
     const imageQuality = localStorage.getItem('imageQuality') || 80;
     const diffThreshold = localStorage.getItem('diffThreshold') || 3;
     const retentionPeriod = localStorage.getItem('retentionPeriod') || 90;
     const ocrLanguage = localStorage.getItem('ocrLanguage') || 'eng';
+    const modelProvider = localStorage.getItem('modelProvider') || 'openai';
+    const openaiApiKey = localStorage.getItem('openaiApiKey') || '';
+    const geminiApiKey = localStorage.getItem('geminiApiKey') || '';
+    const claudeApiKey = localStorage.getItem('claudeApiKey') || '';
+    const localModelUrl = localStorage.getItem('localModelUrl') || 'http://localhost:11434';
 
+    // Set values in the settings form
     document.getElementById('imageQuality').value = imageQuality;
     document.getElementById('diffThreshold').value = diffThreshold;
     document.getElementById('retentionPeriod').value = retentionPeriod;
     document.getElementById('ocrLanguage').value = ocrLanguage;
+    document.getElementById('modelProvider').value = modelProvider;
+    document.getElementById('openaiApiKey').value = openaiApiKey;
+    document.getElementById('geminiApiKey').value = geminiApiKey;
+    document.getElementById('claudeApiKey').value = claudeApiKey;
+    document.getElementById('localModelUrl').value = localModelUrl;
 
     // Load folder path from local storage
     const folderPath = await getFolderPath();
     if (folderPath) {
         folderPathDisplay.textContent = folderPath;
         folderDisplay.textContent = `Current folder: ${folderPath}`;
+        openFolderButton.classList.remove('hidden');
     }
 
     // Check if capturing was active before reload
@@ -85,14 +98,37 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     selectFolderButton.addEventListener('click', async () => {
         const path = await selectFolder();
-        folderPathDisplay.textContent = path;
-        folderDisplay.textContent = `Current folder: ${path}`;
+        if (path) {
+            folderPathDisplay.textContent = path;
+            folderDisplay.textContent = `Current folder: ${path}`;
+            openFolderButton.classList.remove('hidden');
+            
+            // Export the database to the new folder
+            const dirHandle = await window.directoryHandle;
+            if (dirHandle) {
+                await exportDBToJson(dirHandle);
+            }
+        }
+    });
+
+    openFolderButton.addEventListener('click', async () => {
+        try {
+            // This will only work if the browser supports launchDirectory
+            // and the folder was selected with showDirectoryPicker()
+            if (window.directoryHandle && window.directoryHandle.requestPermission) {
+                await window.directoryHandle.requestPermission({ mode: 'readwrite' });
+                // On some platforms/browsers, this might open the folder in the OS file explorer
+                await window.showDirectoryPicker({ id: window.directoryHandle });
+            }
+        } catch (error) {
+            console.error('Error opening folder:', error);
+        }
     });
 
     searchInput.addEventListener('input', async (event) => {
         const searchTerm = event.target.value;
         const results = await searchScreenshots(searchTerm);
-        displayImages(results);
+        displayDailyGroups(results);
     });
 
     // Settings Modal event listeners
@@ -110,82 +146,201 @@ document.addEventListener('DOMContentLoaded', async () => {
         const diffThreshold = document.getElementById('diffThreshold').value;
         const retentionPeriod = document.getElementById('retentionPeriod').value;
         const ocrLanguage = document.getElementById('ocrLanguage').value;
+        const modelProvider = document.getElementById('modelProvider').value;
+        const openaiApiKey = document.getElementById('openaiApiKey').value;
+        const geminiApiKey = document.getElementById('geminiApiKey').value;
+        const claudeApiKey = document.getElementById('claudeApiKey').value;
+        const localModelUrl = document.getElementById('localModelUrl').value;
 
         localStorage.setItem('imageQuality', imageQuality);
         localStorage.setItem('diffThreshold', diffThreshold);
         localStorage.setItem('retentionPeriod', retentionPeriod);
         localStorage.setItem('ocrLanguage', ocrLanguage);
+        localStorage.setItem('modelProvider', modelProvider);
+        localStorage.setItem('openaiApiKey', openaiApiKey);
+        localStorage.setItem('geminiApiKey', geminiApiKey);
+        localStorage.setItem('claudeApiKey', claudeApiKey);
+        localStorage.setItem('localModelUrl', localModelUrl);
 
         settingsModal.classList.add('hidden');
     });
 
-    // Initial image display (all images)
-    let allImages = await searchScreenshots('');
-    displayDailyGroups(allImages);
+    // Initial data display
+    const allItems = await searchScreenshots('');
+    displayDailyGroups(allItems);
 
-    let displayedImagesCount = 0;
-    const imagesPerLoad = 10;
-
-    function displayDailyGroups(images) {
+    // Function to display items in daily groups
+    function displayDailyGroups(items) {
         dailyGroups.innerHTML = '';
-        const grouped = groupByDate(images);
-
+        
+        // Group items by date
+        const grouped = groupByDate(items);
+        
+        // Create a section for each date
         for (const date in grouped) {
+            const dateSection = document.createElement('div');
+            dateSection.className = 'mb-6';
+            
+            // Add date heading
             const dateHeading = document.createElement('h2');
-            dateHeading.textContent = date;
-            dateHeading.className = 'text-xl font-bold mb-2 mt-4';
-            dailyGroups.appendChild(dateHeading);
-
+            dateHeading.textContent = formatDate(date);
+            dateHeading.className = 'text-xl font-bold mb-4 border-b border-gray-600 pb-2';
+            dateSection.appendChild(dateHeading);
+            
+            // Create grid for this date's items
             const grid = document.createElement('div');
-            grid.className = 'grid gap-4';
-            let i = 0;
-            while (i < imagesPerLoad && displayedImagesCount < images.length) {
-                const imgElement = document.createElement('img');
-                imgElement.src = images[displayedImagesCount].url;
-                imgElement.alt = images[displayedImagesCount].ocrText;
-                imgElement.className = 'w-full rounded shadow-md';
-                grid.appendChild(imgElement);
-                displayedImagesCount++;
-                i++;
-            }
-            dailyGroups.appendChild(grid);
+            grid.className = 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4';
+            
+            // Add each item to the grid
+            grouped[date].forEach(item => {
+                const gridItem = document.createElement('div');
+                gridItem.className = 'rounded overflow-hidden shadow-lg bg-gray-800';
+                
+                // Check if this is a screenshot or a summary
+                if (item.url) {
+                    // It's a screenshot
+                    const img = document.createElement('img');
+                    img.src = item.url;
+                    img.alt = item.ocrText || 'Screenshot';
+                    img.className = 'w-full h-40 object-cover';
+                    
+                    const textContainer = document.createElement('div');
+                    textContainer.className = 'px-4 py-2';
+                    
+                    const time = document.createElement('p');
+                    time.textContent = formatTime(item.timestamp);
+                    time.className = 'text-sm text-gray-400';
+                    
+                    const text = document.createElement('p');
+                    text.textContent = item.ocrText ? truncateText(item.ocrText, 100) : 'No text detected';
+                    text.className = 'text-sm';
+                    
+                    textContainer.appendChild(time);
+                    textContainer.appendChild(text);
+                    
+                    gridItem.appendChild(img);
+                    gridItem.appendChild(textContainer);
+                } else {
+                    // It's a summary
+                    gridItem.className += ' summary-tile bg-blue-900 text-white';
+                    
+                    const summaryContainer = document.createElement('div');
+                    summaryContainer.className = 'px-4 py-3';
+                    
+                    const summaryTitle = document.createElement('h3');
+                    summaryTitle.textContent = 'Activity Summary';
+                    summaryTitle.className = 'font-bold mb-2';
+                    
+                    const timeRange = document.createElement('p');
+                    timeRange.textContent = `${formatTime(item.startTime)} - ${formatTime(item.endTime)}`;
+                    timeRange.className = 'text-xs text-blue-300 mb-2';
+                    
+                    const summaryText = document.createElement('p');
+                    summaryText.textContent = item.text;
+                    summaryText.className = 'text-sm';
+                    
+                    summaryContainer.appendChild(summaryTitle);
+                    summaryContainer.appendChild(timeRange);
+                    summaryContainer.appendChild(summaryText);
+                    
+                    gridItem.appendChild(summaryContainer);
+                }
+                
+                grid.appendChild(gridItem);
+            });
+            
+            dateSection.appendChild(grid);
+            dailyGroups.appendChild(dateSection);
         }
     }
 
-    function groupByDate(images) {
-        return images.reduce((groups, image) => {
-            const date = image.timestamp.slice(0, 10);
+    // Group items by date
+    function groupByDate(items) {
+        return items.reduce((groups, item) => {
+            // Get date from timestamp or endTime
+            const timestamp = item.timestamp || item.endTime;
+            const date = timestamp.split('T')[0];
+            
             if (!groups[date]) {
                 groups[date] = [];
             }
-            groups[date].push(image);
+            groups[date].push(item);
             return groups;
         }, {});
     }
 
-    window.addEventListener('scroll', () => {
-        if (window.innerHeight + window.scrollY >= document.body.offsetHeight) {
-            loadMoreImages();
+    // Format date for display
+    function formatDate(dateStr) {
+        const date = new Date(dateStr);
+        return new Intl.DateTimeFormat('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        }).format(date);
+    }
+
+    // Format time for display
+    function formatTime(timestamp) {
+        const date = new Date(timestamp);
+        return date.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+
+    // Truncate text to specified length
+    function truncateText(text, maxLength) {
+        if (text.length <= maxLength) return text;
+        return text.substring(0, maxLength) + '...';
+    }
+
+    // Implement infinite scroll
+    let pageSize = 20;
+    let currentPage = 1;
+    let loading = false;
+    
+    window.addEventListener('scroll', async () => {
+        if (loading) return;
+        
+        const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
+        
+        if (scrollTop + clientHeight >= scrollHeight - 300) {
+            loading = true;
+            currentPage++;
+            
+            const moreItems = await db.screenshots
+                .offset(currentPage * pageSize)
+                .limit(pageSize)
+                .toArray();
+                
+            if (moreItems.length > 0) {
+                const currentItems = await searchScreenshots('');
+                displayDailyGroups([...currentItems, ...moreItems]);
+            }
+            
+            loading = false;
         }
     });
 
-    async function loadMoreImages() {
-        let allImages = await searchScreenshots('');
-        displayDailyGroups(allImages);
-    }
-
     // Schedule retention check
     scheduleRetentionCheck();
-
+    
     // Schedule summarization
     scheduleSummarization();
-
+    
     async function performSummarization() {
         try {
+            // Get current time
             const now = new Date();
-            const startTime = new Date(now.getTime() - 40 * 60 * 1000); // 40 minutes ago
-            const endTime = new Date(now.getTime() - 20 * 60 * 1000); // 20 minutes ago
+            
+            // Calculate start and end times for the 30-minute chunk with 10-minute overlap
+            const endTime = new Date(now);
+            const startTime = new Date(now.getTime() - 40 * 60 * 1000); // 40 minutes ago (30 min + 10 min overlap)
+            
+            console.log(`Summarizing screenshots from ${startTime.toISOString()} to ${endTime.toISOString()}`);
 
+            // Get screenshots in this time range
             const screenshots = await db.screenshots
                 .where('timestamp')
                 .between(startTime.toISOString(), endTime.toISOString())
@@ -200,13 +355,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const timestamps = screenshots.map(s => s.timestamp);
 
             await generateSummary(ocrText, timestamps);
+            console.log('Summarization complete!');
         } catch (error) {
             console.error('Error performing summarization:', error);
         }
     }
 
     function scheduleSummarization() {
-        // Run the summarization every 30 minutes
+        // Run the summarization immediately and then every 30 minutes
         performSummarization();
         setInterval(performSummarization, 30 * 60 * 1000);
     }

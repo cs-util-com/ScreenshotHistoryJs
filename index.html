@@ -67,7 +67,7 @@ additional explanations what you change are nice to have but not necessary.
     }
   </script>
 </head>
-<body class="dark:bg-gray-900 dark:text-white">
+<body class="dark:bg-gray-900 dark:text-white font-mono">
   <div class="container mx-auto p-4">
     <h1 class="text-2xl font-bold mb-4">Screenshot History</h1>
 
@@ -82,12 +82,17 @@ additional explanations what you change are nice to have but not necessary.
         Select Folder
       </button>
       <span id="folderPath" class="ml-2">No folder selected</span>
+      <button id="openFolder" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded mr-2 hidden">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"></path>
+        </svg>
+      </button>
       <button id="openSettings" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded ml-auto">
         Settings
       </button>
     </div>
 
-    <div id="folderDisplay" class="mb-4">
+    <div id="folderDisplay" class="mb-4 text-sm text-gray-400">
       <!-- Folder path will be displayed here -->
     </div>
 
@@ -100,8 +105,8 @@ additional explanations what you change are nice to have but not necessary.
       <!-- Images will be loaded here -->
     </div>
 
-    <div id="dailyGroups">
-      <!-- Daily grouped images will be loaded here -->
+    <div id="dailyGroups" class="space-y-6">
+      <!-- Daily grouped images and summaries will be loaded here -->
     </div>
   </div>
 
@@ -142,6 +147,37 @@ additional explanations what you change are nice to have but not necessary.
               <input type="text" id="ocrLanguage" value="eng"
                 class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white">
             </div>
+            <hr class="my-4 border-gray-300 dark:border-gray-600">
+            <h4 class="text-md font-medium text-gray-900 dark:text-white mb-2">LLM API Keys</h4>
+            <div class="mb-4">
+              <label for="modelProvider" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Default Provider:</label>
+              <select id="modelProvider" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white">
+                <option value="openai">OpenAI</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="claude">Anthropic Claude</option>
+                <option value="local">Local Model (Ollama)</option>
+              </select>
+            </div>
+            <div class="mb-4">
+              <label for="openaiApiKey" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">OpenAI API Key:</label>
+              <input type="password" id="openaiApiKey" 
+                class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white">
+            </div>
+            <div class="mb-4">
+              <label for="geminiApiKey" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Google Gemini API Key:</label>
+              <input type="password" id="geminiApiKey"
+                class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white">
+            </div>
+            <div class="mb-4">
+              <label for="claudeApiKey" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Anthropic Claude API Key:</label>
+              <input type="password" id="claudeApiKey"
+                class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white">
+            </div>
+            <div class="mb-4">
+              <label for="localModelUrl" class="block text-gray-700 dark:text-gray-300 text-sm font-bold mb-2">Local Model URL (Ollama):</label>
+              <input type="text" id="localModelUrl" value="http://localhost:11434"
+                class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white">
+            </div>
           </div>
         </div>
         <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
@@ -160,6 +196,6 @@ additional explanations what you change are nice to have but not necessary.
 
   <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.2/dist/dexie.min.js"></script>
   <script src="https://unpkg.com/tesseract.js@v4.0.0/dist/tesseract.min.js"></script>
-  <script src="main.js"></script>
+  <script src="main.js" type="module"></script>
 </body>
 </html>

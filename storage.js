@@ -1,11 +1,20 @@
+import { selectFolder } from './fileAccess.js';
+
 let db;
+let exportIntervalId;
 
 async function initDB() {
     db = new Dexie('ScreenshotHistoryDB');
     db.version(1).stores({
-        screenshots: 'timestamp, ocrText'
+        screenshots: 'timestamp, ocrText',
+        summaries: 'id, startTime, endTime, text',
+        settings: 'key'
     });
     await db.open();
+    
+    // Schedule database export
+    scheduleDailyExport();
+    return db;
 }
 
 async function addScreenshot(timestamp, url, ocrText) {
@@ -21,21 +30,172 @@ async function addScreenshot(timestamp, url, ocrText) {
     }
 }
 
+async function addSummary(startTime, endTime, text) {
+    try {
+        const id = `${startTime}_${endTime}`;
+        await db.summaries.put({
+            id,
+            startTime,
+            endTime,
+            text,
+            timestamp: new Date().toISOString() // for sorting in the UI
+        });
+        console.log('Summary added to DB:', id);
+        return id;
+    } catch (error) {
+        console.error('Error adding summary to DB:', error);
+        return null;
+    }
+}
+
 async function searchScreenshots(searchTerm) {
     try {
-        const results = await db.screenshots
-            .where('ocrText')
-            .startsWith(searchTerm)
-            .toArray();
-        return results;
+        if (!searchTerm) {
+            // Return all screenshots and summaries, sorted by timestamp
+            const screenshots = await db.screenshots.toArray();
+            const summaries = await db.summaries.toArray();
+            
+            // Combine and sort by timestamp
+            const combined = [...screenshots, ...summaries].sort((a, b) => {
+                const timeA = a.timestamp || a.endTime;
+                const timeB = b.timestamp || b.endTime;
+                return timeB.localeCompare(timeA); // Descending order (newest first)
+            });
+            
+            return combined;
+        } else {
+            // Search screenshots by OCR text
+            const screenshots = await db.screenshots
+                .filter(item => item.ocrText && item.ocrText.toLowerCase().includes(searchTerm.toLowerCase()))
+                .toArray();
+                
+            // Search summaries by text
+            const summaries = await db.summaries
+                .filter(item => item.text && item.text.toLowerCase().includes(searchTerm.toLowerCase()))
+                .toArray();
+                
+            // Combine and sort
+            return [...screenshots, ...summaries].sort((a, b) => {
+                const timeA = a.timestamp || a.endTime;
+                const timeB = b.timestamp || b.endTime;
+                return timeB.localeCompare(timeA);
+            });
+        }
     } catch (error) {
-        console.error('Error searching screenshots:', error);
+        console.error('Error searching data:', error);
         return [];
+    }
+}
+
+async function getSummary(startTime, endTime) {
+    try {
+        const id = `${startTime}_${endTime}`;
+        return await db.summaries.get(id);
+    } catch (error) {
+        console.error('Error getting summary:', error);
+        return null;
+    }
+}
+
+async function getRecentScreenshots(hours = 0.5) {
+    try {
+        const now = new Date();
+        const pastTime = new Date(now.getTime() - hours * 60 * 60 * 1000);
+        
+        return await db.screenshots
+            .where('timestamp')
+            .above(pastTime.toISOString())
+            .toArray();
+    } catch (error) {
+        console.error('Error getting recent screenshots:', error);
+        return [];
+    }
+}
+
+// Database export functions
+async function exportDBToJson(directoryHandle) {
+    try {
+        if (!directoryHandle) {
+            console.warn('No directory handle available for DB export');
+            return;
+        }
+        
+        const date = new Date().toISOString().slice(0, 10);
+        const filename = `db-${date}.json`;
+        
+        // Export both screenshots and summaries tables
+        const screenshots = await db.screenshots.toArray();
+        const summaries = await db.summaries.toArray();
+        
+        const exportData = {
+            screenshots,
+            summaries,
+            exportDate: new Date().toISOString()
+        };
+        
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+            type: 'application/json'
+        });
+        
+        try {
+            const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            
+            console.log(`Database exported to ${filename}`);
+        } catch (error) {
+            console.error('Error writing DB export file:', error);
+        }
+    } catch (error) {
+        console.error('Error exporting database:', error);
+    }
+}
+
+function scheduleDailyExport() {
+    // Export every 5 minutes as specified in the requirements
+    const EXPORT_INTERVAL = 5 * 60 * 1000; // 5 minutes
+    
+    // Clear any existing export intervals
+    if (exportIntervalId) {
+        clearInterval(exportIntervalId);
+    }
+    
+    exportIntervalId = setInterval(() => {
+        // Get the directory handle and export
+        getDirectoryHandle().then(dirHandle => {
+            if (dirHandle) {
+                exportDBToJson(dirHandle);
+            }
+        });
+    }, EXPORT_INTERVAL);
+}
+
+// Get directory handle from File System Access API
+async function getDirectoryHandle() {
+    try {
+        // Try to use the saved directory handle if available
+        const savedDirHandle = localStorage.getItem('directoryHandle');
+        if (savedDirHandle) {
+            return savedDirHandle;
+        }
+        
+        // If not available, prompt user to select a directory
+        console.log('No saved directory handle found, prompting user to select directory');
+        return await selectFolder();
+    } catch (error) {
+        console.error('Error getting directory handle:', error);
+        return null;
     }
 }
 
 export {
     initDB,
+    db,
     addScreenshot,
-    searchScreenshots
+    addSummary,
+    searchScreenshots,
+    getSummary,
+    getRecentScreenshots,
+    exportDBToJson
 };
