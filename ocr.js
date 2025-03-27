@@ -11,7 +11,9 @@ async function performOCR(imageBlob, timestamp, imageUrl) {
         const finalImageUrl = imageUrl || URL.createObjectURL(imageBlob);
         
         // Store the blob in the global storage to prevent garbage collection
-        if (!window._savedBlobs) window._savedBlobs = {};
+        if (!window._savedBlobs) {
+            window._savedBlobs = {};
+        }
         window._savedBlobs[timestamp] = imageBlob.slice(0);
         
         // Get OCR language from local storage or use browser language

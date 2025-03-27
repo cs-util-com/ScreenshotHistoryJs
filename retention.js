@@ -1,6 +1,7 @@
 import {
     initDB
 } from './storage.js';
+import { getDirectoryHandle } from './fileAccess.js';
 
 let db;
 
@@ -25,6 +26,9 @@ async function performRetentionCheck() {
         cutoffDate.setDate(cutoffDate.getDate() - retentionPeriod);
         const cutoffTimestamp = cutoffDate.toISOString();
         
+        // Get directory handle
+        const dirHandle = await getDirectoryHandle();
+        
         // Find screenshots to delete
         const screenshotsToDelete = await db.screenshots
             .where('timestamp')
@@ -45,6 +49,15 @@ async function performRetentionCheck() {
                     // Revoke the object URL to prevent memory leaks
                     if (screenshot.url && screenshot.url.startsWith('blob:')) {
                         URL.revokeObjectURL(screenshot.url);
+                    }
+                    
+                    // Remove file from directory if handle is available
+                    if (dirHandle && screenshot.fileName) {
+                        try {
+                            await dirHandle.removeEntry(screenshot.fileName);
+                        } catch (err) {
+                            console.warn('Unable to remove old file:', screenshot.fileName, err);
+                        }
                     }
                     
                     // Delete from database
