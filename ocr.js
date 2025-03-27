@@ -43,9 +43,10 @@ async function performOCR(imageBlob, timestamp, imageUrl) {
         });
         
         try {
+            const requestedLang = (ocrLanguage === 'en') ? 'eng' : ocrLanguage;
             // Use CDN that actually works - try with current version
-            await worker.loadLanguage(ocrLanguage);
-            await worker.initialize(ocrLanguage);
+            await worker.loadLanguage(requestedLang);
+            await worker.initialize(requestedLang);
             
             // Mark language as loaded successfully
             languageLoadAttempts[ocrLanguage] = 'loaded';

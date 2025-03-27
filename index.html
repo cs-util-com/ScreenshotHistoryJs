@@ -30,27 +30,6 @@ additional explanations what you change are nice to have but not necessary.
   <!-- Added Tailwind CSS via CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    @view-transition {
-      navigation: auto;
-    }
-    
-    nav a[aria-current="page"]:after {
-      border-color: white;
-      view-transition-name: posts-nav;
-    }
-    
-    /* Old stuff going out */
-    ::view-transition-old(posts-nav) {
-      animation: fade 0.2s linear forwards;
-      height: 100%;
-    }
-    
-    /* New stuff coming in */
-    ::view-transition-new(posts-nav) {
-      animation: fade 0.3s linear reverse;
-      height: 100%;
-    }
-    
     @keyframes fade {
       from { opacity: 1; }
       to { opacity: 0; }
@@ -105,9 +84,7 @@ additional explanations what you change are nice to have but not necessary.
         class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white">
     </div>
 
-    <div id="imageGrid" class="grid gap-4">
-      <!-- Images will be loaded here -->
-    </div>
+    <!-- Removed unused #imageGrid container -->
 
     <div id="dailyGroups" class="space-y-6">
       <!-- Daily grouped images and summaries will be loaded here -->

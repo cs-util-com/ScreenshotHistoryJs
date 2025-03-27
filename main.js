@@ -220,7 +220,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const img = document.createElement('img');
                     img.src = item.url;
                     img.alt = item.ocrText || 'Screenshot';
-                    img.className = 'max-h-full max-w-full object-contain';
+                    img.className = 'w-full h-32 object-cover';
                     
                     // Display a loading indicator while the image loads
                     const loadingIndicator = document.createElement('div');
@@ -258,7 +258,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     
                     const text = document.createElement('p');
                     text.textContent = item.ocrText ? truncateText(item.ocrText, 100) : 'No text detected';
-                    text.className = 'text-sm';
+                    text.className = 'text-sm overflow-hidden overflow-ellipsis max-h-16';
                     
                     textContainer.appendChild(time);
                     textContainer.appendChild(text);
@@ -282,7 +282,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     
                     const summaryText = document.createElement('p');
                     summaryText.textContent = item.text;
-                    summaryText.className = 'text-sm';
+                    summaryText.className = 'text-sm overflow-hidden overflow-ellipsis max-h-32';
                     
                     summaryContainer.appendChild(summaryTitle);
                     summaryContainer.appendChild(timeRange);
