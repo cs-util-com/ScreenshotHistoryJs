@@ -165,16 +165,45 @@ async function getDirectoryHandle() {
     return directoryHandle;
 }
 
+async function getScreenshotFileUrl(timestamp) {
+    if (!directoryHandle) return null;
+    // Rebuild the filename pattern used in saveScreenshot
+    const formattedTimestamp = timestamp
+        .replace(/:/g, '-')
+        .replace(/\./g, '-')
+        .replace('Z', '')
+        .replace('T', '_');
+    const pngFilename = `screenshot_${formattedTimestamp}.png`;
+    const jpgFilename = `screenshot_${formattedTimestamp}.jpg`;
+
+    try {
+        // Try PNG then JPG
+        let fileHandle;
+        try {
+            fileHandle = await directoryHandle.getFileHandle(pngFilename);
+        } catch { 
+            fileHandle = await directoryHandle.getFileHandle(jpgFilename);
+        }
+        const file = await fileHandle.getFile();
+        return URL.createObjectURL(file);
+    } catch (e) {
+        console.error('Could not retrieve screenshot file:', e);
+        return null;
+    }
+}
+
 async function restoreDirectoryHandle() {
     const hasStoredHandle = localStorage.getItem('hasDirectoryHandle') === 'true';
-    
     if (hasStoredHandle && !directoryHandle) {
-        // We need to ask the user to select the folder again to get the handle
-        // since browser security does not allow storing the actual handle
-        console.log('Need to re-select folder to restore handle');
-        return false;
+        try {
+            // Attempt to request permission again
+            console.log('Requesting folder permission automatically...');
+            return !!(await selectFolder());
+        } catch (e) {
+            console.warn('Could not auto-request folder permission:', e);
+            return false;
+        }
     }
-    
     return !!directoryHandle;
 }
 
@@ -183,5 +212,6 @@ export {
     saveScreenshot,
     getFolderPath,
     getDirectoryHandle,
-    restoreDirectoryHandle
+    restoreDirectoryHandle,
+    getScreenshotFileUrl
 };

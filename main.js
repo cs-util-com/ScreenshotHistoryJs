@@ -71,6 +71,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const folderPath = await getFolderPath();
     const hasDirectoryHandle = await restoreDirectoryHandle();
     
+    if (!hasDirectoryHandle && !folderPath) {
+        // Request folder if none selected
+        await selectFolder();
+    }
+
     if (folderPath) {
         folderPathDisplay.textContent = folderPath;
         folderDisplay.textContent = `Current folder: ${folderPath}`;
@@ -234,15 +239,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                     };
                     
                     // Handle image loading failure
-                    img.onerror = (e) => {
+                    img.onerror = async (e) => {
                         console.error("Failed to load image:", item.url, e);
                         loadingIndicator.innerHTML = "Image not available";
-                        
-                        // Try to recreate the blob URL if possible
                         if (window._savedBlobs && window._savedBlobs[item.timestamp]) {
-                            console.log("Attempting to recreate blob URL from saved blob");
                             const newUrl = URL.createObjectURL(window._savedBlobs[item.timestamp]);
                             img.src = newUrl;
+                        } else {
+                            const fallbackUrl = await getScreenshotFileUrl(item.timestamp);
+                            if (fallbackUrl) {
+                                console.log("Fallback file URL found:", fallbackUrl);
+                                img.src = fallbackUrl;
+                            }
                         }
                     };
                     
