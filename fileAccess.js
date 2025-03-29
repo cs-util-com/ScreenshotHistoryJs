@@ -132,6 +132,7 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
         
         const pngFilename = `screenshot_${formattedTimestamp}.png`;
         const jpgFilename = `screenshot_${formattedTimestamp}.jpg`;
+        const thumbnailFilename = `thumbnail_${formattedTimestamp}.jpg`;
         
         let pngFile, jpgFile;
         try {
@@ -161,7 +162,7 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
         let savedBlob;
         let savedFilename;
         
-        // Delete the larger file
+        // Save smaller file and delete the larger one
         if (pngBlob.size > jpgBlob.size) {
             try {
                 await directoryHandle.removeEntry(pngFilename);
@@ -186,11 +187,12 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
         if (!window._savedBlobs) window._savedBlobs = {};
         window._savedBlobs[timestamp] = savedBlob;
 
-        // Perform OCR
+        // Perform OCR - we'll modify this to create thumbnail
         try {
             const ocr = await import('./ocr.js');
             const blobToUse = pngBlob.size > jpgBlob.size ? jpgBlob : pngBlob;
-            await ocr.performOCR(blobToUse, timestamp, imageUrl);
+            // Pass the thumbnail filename so OCR can save the downscaled version
+            await ocr.performOCR(blobToUse, timestamp, imageUrl, thumbnailFilename);
         } catch (e) {
             console.error('Error during OCR:', e);
         }
@@ -199,7 +201,8 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
         return {
             timestamp,  // Keep the original timestamp for database consistency
             filename: savedFilename,
-            url: imageUrl
+            url: imageUrl,
+            thumbnailFilename: thumbnailFilename
         };
 
     } catch (error) {
@@ -649,6 +652,81 @@ async function requestPermissionOnUserActivation() {
     return false;
 }
 
+// Add function to get a thumbnail file
+async function getThumbnailFile(timestamp) {
+    if (!directoryHandle) return null;
+    
+    try {
+        // Format the timestamp the same way as in saveScreenshot
+        const formattedTimestamp = timestamp
+            .replace(/:/g, '-')
+            .replace(/\./g, '-')
+            .replace('Z', '')
+            .replace('T', '_');
+        
+        const thumbnailFilename = `thumbnail_${formattedTimestamp}.jpg`;
+        
+        try {
+            const fileHandle = await directoryHandle.getFileHandle(thumbnailFilename);
+            const file = await fileHandle.getFile();
+            
+            if (file.size === 0) {
+                console.warn(`Thumbnail file ${thumbnailFilename} is empty`);
+                return null;
+            }
+            
+            const url = URL.createObjectURL(file);
+            return { url, file };
+        } catch (e) {
+            // Thumbnail doesn't exist, fall back to the original image
+            return null;
+        }
+    } catch (e) {
+        console.warn('Error getting thumbnail:', e);
+        return null;
+    }
+}
+
+// Function to open a file in the system's default viewer
+async function openFileInSystemViewer(fileHandle) {
+    try {
+        if ('launchHandler' in fileHandle) {
+            await fileHandle.launchHandler();
+            return true;
+        } else if ('launch' in fileHandle) {
+            await fileHandle.launch();
+            return true;
+        } else {
+            console.warn('System file viewer not supported in this browser');
+            return false;
+        }
+    } catch (e) {
+        console.error('Error opening file in system viewer:', e);
+        return false;
+    }
+}
+
+// Save a thumbnail to the folder
+async function saveThumbnail(thumbnailBlob, filename) {
+    if (!directoryHandle) return false;
+    
+    // Skip if we don't have write permission
+    if (await verifyPermission(directoryHandle, true) === false) {
+        return false;
+    }
+    
+    try {
+        const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(thumbnailBlob);
+        await writable.close();
+        return true;
+    } catch (e) {
+        console.warn('Error saving thumbnail:', e);
+        return false;
+    }
+}
+
 export {
     selectFolder,
     saveScreenshot,
@@ -662,5 +740,8 @@ export {
     scanFolderForScreenshots,
     getScreenshotFile,
     verifyPermission,
-    requestPermissionOnUserActivation
+    requestPermissionOnUserActivation,
+    getThumbnailFile,
+    openFileInSystemViewer,
+    saveThumbnail
 };

@@ -1,4 +1,5 @@
 import { addScreenshot, isScreenshotOcrProcessed, markScreenshotAsOcrProcessed } from './storage.js';
+import { saveThumbnail } from './fileAccess.js';
 
 // Cache for language loading status to avoid repeated errors
 const languageLoadAttempts = {};
@@ -51,7 +52,7 @@ async function downscaleImageForOCR(imageBlob, maxWidth = OCR_CONFIG.maxImageWid
             } else {
                 // If already small enough, just use the original
                 URL.revokeObjectURL(img.src);
-                resolve(imageBlob);
+                resolve({ blob: imageBlob, canvas: null });
                 return;
             }
             
@@ -64,7 +65,8 @@ async function downscaleImageForOCR(imageBlob, maxWidth = OCR_CONFIG.maxImageWid
             // Convert to Blob
             canvas.toBlob(blob => {
                 URL.revokeObjectURL(img.src);
-                resolve(blob);
+                // Return both the blob and the canvas for thumbnail creation
+                resolve({ blob, canvas });
             }, 'image/jpeg', 0.85);
         };
         
@@ -77,7 +79,7 @@ async function downscaleImageForOCR(imageBlob, maxWidth = OCR_CONFIG.maxImageWid
     });
 }
 
-async function performOCR(imageSource, timestamp, imageUrl) {
+async function performOCR(imageSource, timestamp, imageUrl, thumbnailFilename = null) {
     try {
         // Check database first if this image was already processed
         if (await isScreenshotOcrProcessed(timestamp)) {
@@ -151,8 +153,18 @@ async function performOCR(imageSource, timestamp, imageUrl) {
         
         // Downscale the image for OCR to prevent memory issues
         let processingBlob;
+        let thumbnailCanvas;
         try {
-            processingBlob = await downscaleImageForOCR(imageBlob);
+            const result = await downscaleImageForOCR(imageBlob);
+            processingBlob = result.blob;
+            thumbnailCanvas = result.canvas;
+            
+            // Save downscaled image as thumbnail if we have a canvas and filename
+            if (thumbnailCanvas && thumbnailFilename) {
+                thumbnailCanvas.toBlob(async (thumbnailBlob) => {
+                    await saveThumbnail(thumbnailBlob, thumbnailFilename);
+                }, 'image/jpeg', 0.7);
+            }
         } catch (e) {
             console.error('Error downscaling image for OCR:', e);
             processingBlob = imageBlob; // Fallback to original if downscaling fails

@@ -9,7 +9,9 @@ import {
     getDirectoryHandle,
     getScreenshotFile,
     getScreenshotFileUrl,
-    requestPermissionOnUserActivation
+    requestPermissionOnUserActivation,
+    getThumbnailFile,
+    openFileInSystemViewer
 } from './fileAccess.js';
 import {
     initDB,
@@ -363,8 +365,39 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Add each item to the grid
             grouped[date].forEach(item => {
                 const itemElement = document.createElement('div');
-                itemElement.className = 'screenshot-item';
-                itemElement.innerHTML = `<img src="${item.url}" alt="Screenshot">`;
+                itemElement.className = 'screenshot-item cursor-pointer overflow-hidden rounded-lg shadow-md hover:shadow-xl transition-shadow duration-200';
+                
+                // Create image with thumbnail if available
+                const img = document.createElement('img');
+                img.alt = 'Screenshot';
+                img.className = 'w-full h-auto object-cover';
+                img.loading = 'lazy'; // Enable lazy loading for performance
+                
+                // Set data attributes for later use in click handler
+                itemElement.dataset.timestamp = item.timestamp || item.endTime;
+                
+                // Add a placeholder while the image loads
+                img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"%3E%3C/svg%3E';
+                
+                // Try to load thumbnail asynchronously
+                if (item.timestamp) {
+                    (async () => {
+                        const thumbnailData = await getThumbnailFile(item.timestamp);
+                        if (thumbnailData && thumbnailData.url) {
+                            img.src = thumbnailData.url;
+                        } else if (item.url) {
+                            // Fall back to full-size image if thumbnail not available
+                            img.src = item.url;
+                        }
+                    })();
+                    
+                    // Add click handler to open the full-size image
+                    itemElement.addEventListener('click', async () => {
+                        await openScreenshot(item);
+                    });
+                }
+                
+                itemElement.appendChild(img);
                 grid.appendChild(itemElement);
             });
             
@@ -444,6 +477,100 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.error('Error formatting date:', dateStr, error);
             return dateStr; // Fall back to showing the raw date string
         }
+    }
+
+    // Function to open a screenshot in the system viewer or lightbox
+    async function openScreenshot(item) {
+        if (!item || !item.fileHandle) {
+            console.warn('Cannot open: missing file handle');
+            return;
+        }
+        
+        // Try to open with system viewer first
+        const systemViewerSuccess = await openFileInSystemViewer(item.fileHandle);
+        
+        // If system viewer failed, show in lightbox
+        if (!systemViewerSuccess) {
+            showLightbox(item);
+        }
+    }
+    
+    // Create a lightbox for viewing images
+    function showLightbox(item) {
+        // Create the lightbox elements
+        const lightbox = document.createElement('div');
+        lightbox.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80';
+        
+        // Create close button
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'absolute top-4 right-4 text-white hover:text-gray-300 z-10';
+        closeBtn.innerHTML = `
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+        `;
+        closeBtn.addEventListener('click', () => {
+            lightbox.remove();
+        });
+        
+        // Create image container
+        const imgContainer = document.createElement('div');
+        imgContainer.className = 'relative max-w-screen-xl max-h-screen p-4 overflow-auto';
+        
+        // Create the image
+        const img = document.createElement('img');
+        img.alt = 'Screenshot';
+        img.className = 'max-w-full max-h-[90vh] object-contain';
+        
+        // Set the image source
+        if (item.url) {
+            img.src = item.url;
+        } else {
+            // If no URL is available, try to get one
+            (async () => {
+                const fileData = await getScreenshotFile(item.fileHandle);
+                if (fileData && fileData.url) {
+                    img.src = fileData.url;
+                }
+            })();
+        }
+        
+        // Add timestamp and other metadata
+        const metaInfo = document.createElement('div');
+        metaInfo.className = 'text-white text-sm mt-2';
+        metaInfo.textContent = new Date(item.timestamp).toLocaleString();
+        
+        // Add OCR text if available
+        if (item.ocrText) {
+            const ocrText = document.createElement('div');
+            ocrText.className = 'text-white text-sm mt-2 p-2 bg-gray-800 rounded max-h-32 overflow-y-auto';
+            ocrText.textContent = item.ocrText;
+            imgContainer.appendChild(ocrText);
+        }
+        
+        // Assemble the lightbox
+        imgContainer.appendChild(img);
+        imgContainer.appendChild(metaInfo);
+        lightbox.appendChild(closeBtn);
+        lightbox.appendChild(imgContainer);
+        
+        // Add close on click outside image
+        lightbox.addEventListener('click', (e) => {
+            if (e.target === lightbox) {
+                lightbox.remove();
+            }
+        });
+        
+        // Add keyboard navigation
+        document.addEventListener('keydown', function escHandler(e) {
+            if (e.key === 'Escape') {
+                lightbox.remove();
+                document.removeEventListener('keydown', escHandler);
+            }
+        });
+        
+        // Add to the page
+        document.body.appendChild(lightbox);
     }
 
     // Initial data display - only if we have a directory handle

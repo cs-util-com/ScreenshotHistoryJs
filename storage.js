@@ -46,7 +46,7 @@ async function initDB() {
     if (!db || db.name !== dbName) {
         db = new Dexie(dbName);
         db.version(1).stores({
-            screenshots: 'timestamp, ocrText, ocrProcessed', // Add ocrProcessed flag
+            screenshots: 'timestamp, ocrText, ocrProcessed, thumbnailUrl', // Add thumbnailUrl field
             summaries: 'id, startTime, endTime, text',
             settings: 'key'
         });
@@ -230,7 +230,7 @@ async function saveCurrentDatabaseToFolder() {
 }
 
 // Modified version of addScreenshot with ocrProcessed flag
-async function addScreenshot(timestamp, url, ocrText) {
+async function addScreenshot(timestamp, url, ocrText, thumbnailUrl = null) {
     try {
         // Make sure DB is initialized
         if (!db || !db.isOpen()) {
@@ -242,7 +242,8 @@ async function addScreenshot(timestamp, url, ocrText) {
             timestamp,            // This serves as the ID in the database
             url,                  // URL is temporary and not included in exports
             ocrText,              // The OCR text is what we want to persist
-            ocrProcessed: true    // Mark as processed when adding with OCR text
+            ocrProcessed: true,   // Mark as processed when adding with OCR text
+            thumbnailUrl          // Add thumbnailUrl to the saved data
         });
         
         // Reduced logging - only log if there's actual OCR text
