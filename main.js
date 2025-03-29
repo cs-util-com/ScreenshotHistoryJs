@@ -270,6 +270,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initial data display
     const allItems = await searchScreenshots('');
     displayDailyGroups(allItems);
+    
+    // ENHANCEMENT: Set up a periodic UI refresh to ensure captures are visible
+    function setupPeriodicUIRefresh() {
+        // This will refresh the UI every 10 seconds
+        const REFRESH_INTERVAL = 10000; // 10 seconds
+        
+        // Keep track of the last refresh time to avoid refreshing during user interactions
+        let lastRefreshTime = Date.now();
+        let refreshIntervalId = null;
+        
+        // Update the last refresh time whenever user interacts with the page
+        const userInteractionEvents = ['click', 'scroll', 'keydown', 'mousemove'];
+        userInteractionEvents.forEach(eventType => {
+            document.addEventListener(eventType, () => {
+                lastRefreshTime = Date.now();
+            });
+        });
+        
+        // Set up the interval that checks if refresh is needed
+        refreshIntervalId = setInterval(async () => {
+            // Only refresh if it's been at least 5 seconds since last user interaction
+            if (Date.now() - lastRefreshTime > 5000) {
+                try {
+                    // Check if we need to refresh by comparing screenshot count
+                    const currentItems = await searchScreenshots('');
+                    
+                    // Track the UI refresh in console (for debugging)
+                    if (!window._lastRefreshCount || window._lastRefreshCount !== currentItems.length) {
+                        console.log(`UI refresh: found ${currentItems.length} items`);
+                        window._lastRefreshCount = currentItems.length;
+                        displayDailyGroups(currentItems);
+                    }
+                } catch (error) {
+                    console.warn('Error during automatic UI refresh:', error);
+                }
+            }
+        }, REFRESH_INTERVAL);
+        
+        // Store the interval ID so it can be cleared if needed
+        window._uiRefreshIntervalId = refreshIntervalId;
+    }
+    
+    // Start the periodic UI refresh
+    setupPeriodicUIRefresh();
 
     // Function to display items in daily groups
     function displayDailyGroups(items) {
@@ -414,6 +458,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             dailyGroups.appendChild(dateSection);
         }
     }
+    
+    // Make displayDailyGroups available globally for refreshing
+    window.refreshDailyGroups = displayDailyGroups;
 
     // New helper function to load images - with additional error prevention
     async function loadImageForElement(imgElement, item, isFallback = false) {
@@ -624,10 +671,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         return text.substring(0, maxLength) + '...';
     }
     
-    // Create a function to add a new screenshot to the UI - fixed to prevent error loops
+    // Create a function to add a new screenshot to the UI - modified for improved reliability
     async function addNewScreenshotToUI(screenshotInfo) {
         if (!screenshotInfo) return;
         
+        // ENHANCEMENT: Force a full refresh for the first few screenshots
+        // This helps ensure the UI is properly populated when starting from empty
+        if (!window._totalAddedScreenshots) window._totalAddedScreenshots = 0;
+        window._totalAddedScreenshots++;
+        
+        if (window._totalAddedScreenshots <= 5) {
+            // For the first few screenshots, do a full refresh
+            setTimeout(async () => {
+                try {
+                    const allItems = await searchScreenshots('');
+                    displayDailyGroups(allItems);
+                } catch (e) {
+                    console.warn('Error during full UI refresh:', e);
+                }
+            }, 500);
+            return;
+        }
+        
+        // For later screenshots, use the existing incremental update approach
         // Prevent duplicate additions - check if this screenshot is already in the UI
         if (document.querySelector(`p[data-timestamp="${screenshotInfo.timestamp}"]`)) {
             // Screenshot already exists in UI, don't add it again
@@ -738,6 +804,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 } else {
                     dailyGroups.appendChild(newDateSection);
                 }
+                
+                // If this is the first item, clear any "no items" message
+                const noItemsMessage = dailyGroups.querySelector('.text-gray-500');
+                if (noItemsMessage) {
+                    noItemsMessage.remove();
+                }
             } else {
                 // Find today's grid
                 const parentSection = todaySection.closest('div');
@@ -809,6 +881,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             
         } catch (error) {
             console.error('Error adding new screenshot to UI:', error);
+            
+            // In case of error, trigger a full UI refresh as fallback
+            setTimeout(async () => {
+                try {
+                    const allItems = await searchScreenshots('');
+                    displayDailyGroups(allItems);
+                } catch (e) {
+                    console.warn('Error during fallback UI refresh:', e);
+                }
+            }, 1000);
         }
     }
     

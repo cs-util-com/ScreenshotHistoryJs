@@ -94,12 +94,38 @@ async function startCapture() {
                 
                 // Only update UI if screenshot was successfully saved
                 if (savedScreenshot) {
-                    // Update the UI with the new screenshot
-                    if (typeof updateUIWithNewScreenshot === 'function') {
-                        updateUIWithNewScreenshot(savedScreenshot);
-                    } else if (window.updateUIWithNewScreenshot) {
-                        // Fallback to using window global if module import fails
-                        window.updateUIWithNewScreenshot(savedScreenshot);
+                    // ENHANCEMENT: Flag that new screenshot is available for automatic UI refresh
+                    window._newScreenshotCaptured = true;
+                    
+                    // Try both ways to update the UI
+                    try {
+                        // Direct function call if available
+                        if (typeof updateUIWithNewScreenshot === 'function') {
+                            updateUIWithNewScreenshot(savedScreenshot);
+                        }
+                        
+                        // Also try window global as backup
+                        if (window.updateUIWithNewScreenshot) {
+                            window.updateUIWithNewScreenshot(savedScreenshot);
+                        }
+                        
+                        // Force a full refresh for more reliable updates
+                        setTimeout(async () => {
+                            try {
+                                // Try to refresh the entire UI after a short delay
+                                const storageModule = await import('./storage.js');
+                                if (storageModule && storageModule.searchScreenshots) {
+                                    const allItems = await storageModule.searchScreenshots('');
+                                    if (window.refreshDailyGroups) {
+                                        window.refreshDailyGroups(allItems);
+                                    }
+                                }
+                            } catch (e) {
+                                console.warn('Error during UI refresh after capture:', e);
+                            }
+                        }, 1000);
+                    } catch (uiError) {
+                        console.warn('Error updating UI:', uiError);
                     }
                 }
 
