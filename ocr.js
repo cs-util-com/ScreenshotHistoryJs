@@ -30,8 +30,6 @@ async function performOCR(imageSource, timestamp, imageUrl) {
         // Get OCR language from local storage or use browser language
         const ocrLanguage = localStorage.getItem('ocrLanguage') || 
             (navigator.language && navigator.language.split('-')[0]) || 'eng';
-            
-        console.log(`Performing OCR in language: ${ocrLanguage} for image: ${finalImageUrl}`);
         
         // Check if we've already failed to load this language
         if (languageLoadAttempts[ocrLanguage] === 'failed') {
@@ -47,9 +45,14 @@ async function performOCR(imageSource, timestamp, imageUrl) {
             }
         }
         
-        // Create a Tesseract worker with logging
+        // Create a Tesseract worker with minimal logging
         const worker = await Tesseract.createWorker({
-            logger: m => console.log(`OCR (${Math.round(m.progress * 100)}%): ${m.status}`),
+            // Only log once at 0% and once at 100% to reduce spam
+            logger: m => {
+                if (m.progress === 0 || m.progress === 1) {
+                    console.log(`OCR ${m.status}: ${Math.round(m.progress * 100)}%`);
+                }
+            },
             errorHandler: err => console.error('Tesseract Worker Error:', err)
         });
         
@@ -66,7 +69,13 @@ async function performOCR(imageSource, timestamp, imageUrl) {
             const { data } = await worker.recognize(imageBlob);
             const text = data.text;
             
-            console.log('OCR Result:', text.length > 100 ? text.substring(0, 100) + '...' : text);
+            // Only log a short preview of the OCR text
+            if (text && text.length > 0) {
+                console.log('OCR completed successfully');
+            } else {
+                console.log('OCR completed with no text detected');
+            }
+            
             await addScreenshot(timestamp, finalImageUrl, text);
             
             // Terminate worker to free memory
@@ -88,8 +97,7 @@ async function performOCR(imageSource, timestamp, imageUrl) {
                     const { data } = await worker.recognize(imageBlob);
                     const text = data.text;
                     
-                    console.log('OCR Result (fallback to English):', 
-                                text.length > 100 ? text.substring(0, 100) + '...' : text);
+                    console.log('OCR completed with English fallback');
                     await addScreenshot(timestamp, finalImageUrl, text);
                     
                 } catch (engError) {

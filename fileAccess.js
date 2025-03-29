@@ -84,14 +84,10 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
             .replace(/\./g, '-')
             .replace('Z', '')
             .replace('T', '_');
-            
-        console.log('Formatted timestamp for filename:', formattedTimestamp);
         
         const pngFilename = `screenshot_${formattedTimestamp}.png`;
         const jpgFilename = `screenshot_${formattedTimestamp}.jpg`;
         
-        console.log('Saving files with names:', pngFilename, jpgFilename);
-            
         let pngFile, jpgFile;
         try {
             pngFile = await directoryHandle.getFileHandle(pngFilename, { create: true });
@@ -124,7 +120,7 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
         if (pngBlob.size > jpgBlob.size) {
             try {
                 await directoryHandle.removeEntry(pngFilename);
-                console.log('Deleted PNG, keeping JPG.');
+                console.log('Saved JPG version (smaller file)');
                 savedBlob = jpgBlob.slice(0); // Create a copy of the blob
                 imageUrl = URL.createObjectURL(savedBlob);
                 savedFilename = jpgFilename;
@@ -134,7 +130,7 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
         } else {
             try {
                 await directoryHandle.removeEntry(jpgFilename);
-                console.log('Deleted JPG, keeping PNG.');
+                console.log('Saved PNG version (smaller file)');
                 savedBlob = pngBlob.slice(0); // Create a copy of the blob
                 imageUrl = URL.createObjectURL(savedBlob);
                 savedFilename = pngFilename;
@@ -147,7 +143,7 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
         if (!window._savedBlobs) window._savedBlobs = {};
         window._savedBlobs[timestamp] = savedBlob;
         
-        console.log('Screenshot saved successfully. Image URL created:', imageUrl);
+        console.log('Screenshot saved successfully');
 
         // Perform OCR
         try {
@@ -227,7 +223,6 @@ async function restoreDirectoryHandle() {
     if (hasStoredHandle && !directoryHandle) {
         try {
             // Attempt to request permission again
-            console.log('Requesting folder permission automatically...');
             return !!(await selectFolder());
         } catch (e) {
             console.warn('Could not auto-request folder permission:', e);
@@ -247,7 +242,6 @@ async function getFolderIdentifier() {
             const file = await fileHandle.getFile();
             const id = await file.text();
             if (id && id.trim()) {
-                console.log('Found existing folder ID:', id);
                 return id.trim();
             }
         } catch (e) {
@@ -263,7 +257,6 @@ async function getFolderIdentifier() {
         await writable.write(folderId);
         await writable.close();
         
-        console.log('Created new folder ID:', folderId);
         return folderId;
     } catch (e) {
         console.error('Error getting/creating folder identifier:', e);
@@ -314,7 +307,9 @@ async function scanFolderForScreenshots() {
         // Sort by timestamp (newest first)
         screenshots.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
         
-        console.log(`Found ${screenshots.length} screenshots in folder`);
+        if (screenshots.length > 0) {
+            console.log(`Found ${screenshots.length} screenshots in folder`);
+        }
         return screenshots;
     } catch (e) {
         console.error('Error scanning folder for screenshots:', e);
@@ -353,7 +348,6 @@ async function saveDatabaseToFolder(dbJson) {
             await writable.write(blob);
             await writable.close();
             
-            console.log('Database saved to folder successfully');
             return true;
         } catch (e) {
             if (e.name === 'SecurityError') {
@@ -382,7 +376,6 @@ async function loadDatabaseFromFolder() {
             const content = await file.text();
             return JSON.parse(content);
         } catch (e) {
-            console.log('No existing database file found in this folder');
             return null;
         }
     } catch (e) {
@@ -395,7 +388,6 @@ async function tryImportDatabaseFromFolder() {
     const dbData = await loadDatabaseFromFolder();
     if (dbData) {
         // Import will be handled by storage.js
-        console.log('Found database file in folder, will import');
         window._pendingDbImport = dbData;
         return true;
     }
@@ -433,7 +425,6 @@ async function requestPermissionOnUserActivation() {
         const result = await verifyPermission(directoryHandle, true);
         if (result) {
             window._pendingPermissionRequest = false;
-            console.log('Permission successfully restored on user interaction');
             return true;
         }
     } catch (e) {

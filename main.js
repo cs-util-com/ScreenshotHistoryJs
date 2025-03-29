@@ -303,7 +303,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     
                     // Handle image loading failure
                     img.onerror = async (e) => {
-                        console.error("Failed to load image:", item.url, e);
+                        console.error("Failed to load image");
                         loadingIndicator.innerHTML = "Image not available";
                         // Try fallback methods
                         await loadImageForElement(img, item, true);
