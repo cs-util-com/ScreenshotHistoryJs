@@ -278,11 +278,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     searchInput.addEventListener('input', async (event) => {
-        const searchTerm = event.target.value;
+        const searchTerm = event.target.value.trim();
         window._refreshState.searchTerm = searchTerm;  // Store current search term
+        
+        // Show search loading indicator
+        if (searchTerm) {
+            dailyGroups.innerHTML = '<div class="text-center py-10 text-gray-500">Searching for "' + searchTerm + '"...</div>';
+        }
+        
         const results = await searchScreenshots(searchTerm);
+        
+        // If we got no results for a non-empty search term, show a helpful message
+        if (results.length === 0 && searchTerm) {
+            dailyGroups.innerHTML = `
+                <div class="text-center py-10 text-gray-500">
+                    No results found for "${searchTerm}". 
+                    <p class="mt-2 text-sm">Try a different search term or check if OCR processing has completed for your screenshots.</p>
+                </div>`;
+            return;
+        }
+        
         displayDailyGroups(results);
         window._refreshState.itemCount = results.length;
+        
+        // Show search result count
+        if (searchTerm) {
+            const searchResultCount = document.createElement('div');
+            searchResultCount.className = 'text-sm text-gray-500 mb-4';
+            searchResultCount.textContent = `Found ${results.length} results for "${searchTerm}"`;
+            dailyGroups.insertAdjacentElement('beforebegin', searchResultCount);
+        }
     });
 
     // Settings Modal event listeners
@@ -329,6 +354,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Function to display items in daily groups
     function displayDailyGroups(items) {
         dailyGroups.innerHTML = '';
+        
+        // Remove any existing search count indicators
+        const existingSearchCount = document.querySelector('.search-count-indicator');
+        if (existingSearchCount) {
+            existingSearchCount.remove();
+        }
         
         if (!items || items.length === 0) {
             dailyGroups.innerHTML = '<div class="text-center py-10 text-gray-500">No items to display. Start capturing to see screenshots here.</div>';
@@ -397,6 +428,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                     });
                 }
                 
+                // If this is a summary and contains the search term, highlight it
+                const searchTerm = window._refreshState.searchTerm;
+                if (searchTerm && searchTerm.trim() !== '' && item.text && typeof item.text === 'string' && item.text.toLowerCase().includes(searchTerm.toLowerCase())) {
+                    // Add a small visual indicator that this matched the search
+                    const searchMatch = document.createElement('div');
+                    searchMatch.className = 'absolute top-2 right-2 bg-yellow-500 text-xs text-white px-2 py-1 rounded-full';
+                    searchMatch.textContent = 'Match';
+                    itemElement.appendChild(searchMatch);
+                }
+
                 itemElement.appendChild(img);
                 grid.appendChild(itemElement);
             });

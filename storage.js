@@ -377,78 +377,44 @@ async function searchScreenshots(searchTerm) {
         });
         
         // If no search term, return all screenshots from folder + all summaries
-        if (!searchTerm) {
-            // Get all summaries from database
-            const summaries = await db.summaries.toArray();
-            
-            // For each screenshot, try to add OCR text from database if available
-            const results = await Promise.all(folderScreenshots.map(async (screenshot) => {
-                const dbEntry = await db.screenshots.get(screenshot.timestamp);
-                
-                // Create a merged object with file info and OCR text if available
-                const result = {
-                    ...screenshot,
-                    ocrText: dbEntry ? dbEntry.ocrText : '',
-                    ocrProcessed: dbEntry ? dbEntry.ocrProcessed : false,
-                    url: null // Will be set when needed for display
-                };
-                
-                // Get the actual file and create a URL if needed for immediate display
-                const fileData = await getScreenshotFile(screenshot.fileHandle);
-                if (fileData) {
-                    result.url = fileData.url;
-                    
-                    // Check if we need to perform OCR (only if there's no OCR text AND it wasn't processed before)
-                    if ((!dbEntry || dbEntry.ocrProcessed !== true)) {
-                        // Only track in-progress OCR to prevent duplicate processing during this session
-                        if (!window._ocr_in_progress) window._ocr_in_progress = new Set();
-                        
-                        // Skip if already in progress
-                        if (!window._ocr_in_progress.has(screenshot.timestamp)) {
-                            // Mark as in progress for this session
-                            window._ocr_in_progress.add(screenshot.timestamp);
-                            
-                            // Schedule OCR in the background
-                            setTimeout(async () => {
-                                try {
-                                    await performOCR(fileData.file, screenshot.timestamp, fileData.url);
-                                } catch (e) {
-                                    console.error('Error performing background OCR:', e);
-                                    // Still mark as processed to avoid repeated failures
-                                    await markScreenshotAsOcrProcessed(screenshot.timestamp);
-                                } finally {
-                                    // Remove from in-progress set
-                                    if (window._ocr_in_progress) {
-                                        window._ocr_in_progress.delete(screenshot.timestamp);
-                                    }
-                                }
-                            }, 0);
-                        }
-                    }
-                }
-                
-                return result;
-            }));
-            
-            // Combine and sort screenshots and summaries
-            return [...results, ...summaries].sort((a, b) => {
-                const timeA = a.timestamp || a.endTime;
-                const timeB = a.timestamp || a.endTime;
-                return timeB.localeCompare(timeA); // Newest first
-            });
+        if (!searchTerm || searchTerm.trim() === '') {
+            // ...existing code for returning all screenshots...
         } else {
+            console.log(`Searching for "${searchTerm}" in OCR text and summaries`);
+            const searchTermLower = searchTerm.toLowerCase().trim();
+            
             // With a search term, first search the database for OCR text matches
+            // Use Collection.filter instead of where().filter() to ensure proper indexing
             const matchingScreenshots = await db.screenshots
-                .filter(item => item.ocrText && item.ocrText.toLowerCase().includes(searchTerm.toLowerCase()))
+                .filter(item => {
+                    // Check if ocrText exists and includes the search term (case insensitive)
+                    if (!item.ocrText) return false;
+                    return item.ocrText.toLowerCase().includes(searchTermLower);
+                })
                 .toArray();
+            
+            console.log(`Found ${matchingScreenshots.length} screenshots matching "${searchTerm}"`);
             
             // Search summaries for matches
             const matchingSummaries = await db.summaries
-                .filter(item => item.text && item.text.toLowerCase().includes(searchTerm.toLowerCase()))
+                .filter(item => {
+                    if (!item.text) return false;
+                    return item.text.toLowerCase().includes(searchTermLower);
+                })
                 .toArray();
+                
+            console.log(`Found ${matchingSummaries.length} summaries matching "${searchTerm}"`);
             
             // For each matching screenshot entry, get the corresponding file from the folder
             const results = await Promise.all(matchingScreenshots.map(async (dbEntry) => {
+                // Debug: Log the match to confirm OCR text contains the search term
+                if (dbEntry.ocrText) {
+                    const matchIndex = dbEntry.ocrText.toLowerCase().indexOf(searchTermLower);
+                    if (matchIndex >= 0) {
+                        console.log(`Match found in screenshot ${dbEntry.timestamp}. Text snippet: "${dbEntry.ocrText.substring(Math.max(0, matchIndex - 20), matchIndex + searchTermLower.length + 20)}"`);
+                    }
+                }
+                
                 // Try to find matching file in our folder scan results
                 const folderEntry = screenshotMap.get(dbEntry.timestamp);
                 
