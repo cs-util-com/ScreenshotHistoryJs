@@ -33,6 +33,9 @@ import {
     scheduleRetentionCheck
 } from './retention.js';
 
+// Add this global variable to store a reference to the update function
+let updateUIWithNewScreenshot;
+
 document.addEventListener('DOMContentLoaded', async () => {
     // Initialize Dexie database
     const db = await initDB();
@@ -461,24 +464,58 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Format time for display
+    // Format time for display - fix timestamp parsing issues
     function formatTime(timestamp) {
         try {
             let date;
             if (typeof timestamp === 'string') {
-                if (timestamp.includes('T')) {
-                    // ISO format
-                    date = new Date(timestamp);
-                } else {
-                    // Try to parse YYYYMMDDHHMMSS format
-                    const year = timestamp.substring(0, 4);
-                    const month = timestamp.substring(4, 6);
-                    const day = timestamp.substring(6, 8);
-                    const hour = timestamp.substring(8, 10);
-                    const minute = timestamp.substring(10, 12);
-                    const second = timestamp.substring(12, 14);
-                    
-                    date = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
+                // First try standard ISO format
+                date = new Date(timestamp);
+                
+                // If that fails or gives an invalid date, try other formats
+                if (isNaN(date.getTime())) {
+                    // Handle our non-standard format with colons or dashes
+                    if (timestamp.includes(':') || timestamp.includes('-')) {
+                        // Replace colons with hyphens for consistency
+                        const cleanTimestamp = timestamp
+                            .replace(/:/g, '-')
+                            .replace('Z', '')
+                            .replace('T', ' ');
+                        
+                        // Try to parse as YYYY-MM-DD HH-MM-SS format
+                        const parts = cleanTimestamp.split(' ');
+                        if (parts.length === 2) {
+                            const [datePart, timePart] = parts;
+                            const [year, month, day] = datePart.split('-');
+                            const [hour, minute, second] = timePart.split('-');
+                            
+                            date = new Date(
+                                parseInt(year),
+                                parseInt(month) - 1, // Month is 0-based
+                                parseInt(day),
+                                parseInt(hour),
+                                parseInt(minute),
+                                parseInt(second)
+                            );
+                        }
+                    } else if (timestamp.length >= 14) {
+                        // Try to parse YYYYMMDDHHMMSS format
+                        const year = timestamp.substring(0, 4);
+                        const month = timestamp.substring(4, 6);
+                        const day = timestamp.substring(6, 8);
+                        const hour = timestamp.substring(8, 10);
+                        const minute = timestamp.substring(10, 12);
+                        const second = timestamp.substring(12, 14);
+                        
+                        date = new Date(
+                            parseInt(year),
+                            parseInt(month) - 1, // Month is 0-based
+                            parseInt(day),
+                            parseInt(hour),
+                            parseInt(minute),
+                            parseInt(second)
+                        );
+                    }
                 }
             } else {
                 date = new Date(timestamp);
@@ -493,8 +530,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 minute: '2-digit'
             });
         } catch (error) {
-            console.error('Error formatting time:', timestamp, error);
-            return typeof timestamp === 'string' ? timestamp : 'Unknown time';
+            console.warn('Error formatting time:', timestamp);
+            return typeof timestamp === 'string' ? 
+                timestamp.split('T')[1]?.substring(0, 5) || 'Unknown time' : 
+                'Unknown time';
         }
     }
 
@@ -503,6 +542,157 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (text.length <= maxLength) return text;
         return text.substring(0, maxLength) + '...';
     }
+    
+    // Create a function to add a new screenshot to the UI - fixed section finding
+    async function addNewScreenshotToUI(screenshotInfo) {
+        if (!screenshotInfo) return;
+        
+        try {
+            // Get the current date from the screenshot timestamp
+            const date = screenshotInfo.timestamp.split('T')[0];
+            const formattedDate = formatDate(date);
+            
+            // Create grid item for the new screenshot
+            const gridItem = document.createElement('div');
+            gridItem.className = 'rounded overflow-hidden shadow-lg bg-gray-800';
+            
+            const imgContainer = document.createElement('div');
+            imgContainer.className = 'h-40 relative bg-gray-700 flex items-center justify-center';
+            
+            const img = document.createElement('img');
+            img.src = screenshotInfo.url;
+            img.alt = 'New Screenshot';
+            img.className = 'w-full h-32 object-cover';
+            
+            const loadingIndicator = document.createElement('div');
+            loadingIndicator.className = 'absolute inset-0 flex items-center justify-center';
+            loadingIndicator.innerHTML = '<span class="animate-pulse">Loading...</span>';
+            
+            img.onload = () => {
+                loadingIndicator.remove();
+            };
+            
+            img.onerror = async (e) => {
+                console.error("Failed to load new image");
+                loadingIndicator.innerHTML = "Image not available";
+            };
+            
+            imgContainer.appendChild(loadingIndicator);
+            imgContainer.appendChild(img);
+            
+            const textContainer = document.createElement('div');
+            textContainer.className = 'px-4 py-2';
+            
+            const time = document.createElement('p');
+            time.textContent = formatTime(screenshotInfo.timestamp);
+            time.className = 'text-sm text-gray-400';
+            
+            const text = document.createElement('p');
+            text.textContent = 'Processing OCR...';
+            text.className = 'text-sm overflow-hidden overflow-ellipsis max-h-16';
+            
+            // Store the timestamp in a data attribute to update the OCR text later
+            text.dataset.timestamp = screenshotInfo.timestamp;
+            
+            textContainer.appendChild(time);
+            textContainer.appendChild(text);
+            
+            gridItem.appendChild(imgContainer);
+            gridItem.appendChild(textContainer);
+            
+            // Find section for today using DOM traversal instead of custom selector
+            let todaySection = null;
+            const headings = document.querySelectorAll('h2');
+            
+            // Loop through all h2 elements to find the one with matching date text
+            for (const heading of headings) {
+                if (heading.textContent === formattedDate) {
+                    todaySection = heading;
+                    break;
+                }
+            }
+            
+            if (!todaySection) {
+                // Today's section doesn't exist yet, create it
+                const newDateSection = document.createElement('div');
+                newDateSection.className = 'mb-6';
+                
+                const dateHeading = document.createElement('h2');
+                dateHeading.textContent = formattedDate;
+                dateHeading.className = 'text-xl font-bold mb-4 border-b border-gray-600 pb-2';
+                newDateSection.appendChild(dateHeading);
+                
+                const grid = document.createElement('div');
+                grid.className = 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4';
+                grid.appendChild(gridItem); // Add the new screenshot
+                
+                newDateSection.appendChild(grid);
+                
+                // Add the new section at the top of dailyGroups
+                if (dailyGroups.firstChild) {
+                    dailyGroups.insertBefore(newDateSection, dailyGroups.firstChild);
+                } else {
+                    dailyGroups.appendChild(newDateSection);
+                }
+            } else {
+                // Find today's grid
+                const parentSection = todaySection.closest('div');
+                const grid = parentSection.querySelector('.grid');
+                
+                // Add the new screenshot at the beginning of the grid
+                if (grid.firstChild) {
+                    grid.insertBefore(gridItem, grid.firstChild);
+                } else {
+                    grid.appendChild(gridItem);
+                }
+            }
+            
+            // Update the OCR text when it becomes available (poll a few times)
+            let attempts = 0;
+            const maxAttempts = 5;
+            const checkOcrText = async () => {
+                attempts++;
+                try {
+                    // Get the screenshot record from the database
+                    const dbEntry = await db.screenshots.get(screenshotInfo.timestamp);
+                    
+                    if (dbEntry && dbEntry.ocrText) {
+                        // Update the text element with OCR text
+                        const textElements = document.querySelectorAll(`p[data-timestamp="${screenshotInfo.timestamp}"]`);
+                        textElements.forEach(el => {
+                            el.textContent = dbEntry.ocrText ? truncateText(dbEntry.ocrText, 100) : 'No text detected';
+                        });
+                        return;
+                    }
+                    
+                    // If we haven't reached max attempts and no OCR text yet, try again
+                    if (attempts < maxAttempts) {
+                        setTimeout(checkOcrText, 2000); // Try again in 2 seconds
+                    } else {
+                        // Give up after max attempts
+                        const textElements = document.querySelectorAll(`p[data-timestamp="${screenshotInfo.timestamp}"]`);
+                        textElements.forEach(el => {
+                            el.textContent = 'OCR processing...';
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error checking OCR text:', error);
+                }
+            };
+            
+            // Start checking for OCR text after a short delay
+            setTimeout(checkOcrText, 2000);
+            
+        } catch (error) {
+            console.error('Error adding new screenshot to UI:', error);
+        }
+    }
+    
+    // Make the function accessible to other modules
+    updateUIWithNewScreenshot = addNewScreenshotToUI;
+    
+    // Make updateUIWithNewScreenshot available globally
+    window.updateUIWithNewScreenshot = updateUIWithNewScreenshot;
 
     // Implement infinite scroll with folder-based approach
     let pageSize = 20;
@@ -582,3 +772,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         setInterval(performSummarization, 30 * 60 * 1000);
     }
 });
+
+// Export the update function for use in other modules
+export {
+    updateUIWithNewScreenshot
+};

@@ -79,7 +79,9 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
     try {
         // Format timestamp for more readable filenames (YYYY-MM-DD-HH-MM-SS)
         // Make sure we don't have any invalid characters like colons or dots in the filename
-        const formattedTimestamp = timestamp
+        // Fix: Use a more consistent format for filenames
+        const isoDate = new Date(timestamp).toISOString();
+        const formattedTimestamp = isoDate
             .replace(/:/g, '-')
             .replace(/\./g, '-')
             .replace('Z', '')

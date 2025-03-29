@@ -207,10 +207,38 @@ async function addScreenshot(timestamp, url, ocrText) {
             url,        // URL is temporary and not included in exports
             ocrText     // The OCR text is what we want to persist
         });
-        console.log('Screenshot OCR data added to DB:', timestamp);
+        
+        // Reduced logging - only log if there's actual OCR text
+        if (ocrText && ocrText.trim().length > 0) {
+            console.log('Screenshot with OCR data added to DB');
+        }
         
         // Mark for saving on next user interaction instead of immediate autosave
         window._needsDatabaseSave = true;
+        
+        // Update the UI if the updateUIWithNewScreenshot function is available
+        // This is a fallback in case the direct update from capture.js doesn't work
+        try {
+            if (window.updateUIWithNewScreenshot && url) {
+                const screenshotInfo = {
+                    timestamp,
+                    url,
+                    ocrText
+                };
+                
+                // Check if we already have this screenshot in the UI before updating
+                const existingElement = document.querySelector(`p[data-timestamp="${timestamp}"]`);
+                if (!existingElement) {
+                    window.updateUIWithNewScreenshot(screenshotInfo);
+                } else if (existingElement.textContent === 'Processing OCR...' && ocrText) {
+                    // Update the OCR text if it's now available
+                    existingElement.textContent = ocrText.length > 100 ? 
+                        ocrText.substring(0, 100) + '...' : ocrText;
+                }
+            }
+        } catch (uiError) {
+            console.warn('Error updating UI with new screenshot:', uiError);
+        }
     } catch (error) {
         console.error('Error adding screenshot to DB:', error);
     }
@@ -258,7 +286,7 @@ async function getScreenshotsFromFolder(limit = null) {
     }
 }
 
-// Modified search function to efficiently search database first, then match with filesystem
+// Modified search function for better error handling
 async function searchScreenshots(searchTerm) {
     try {
         // First, get all the screenshots from the folder to have the full list
@@ -294,7 +322,7 @@ async function searchScreenshots(searchTerm) {
                     
                     // If we don't have OCR data for this screenshot, perform OCR in the background
                     if (!dbEntry || !dbEntry.ocrText) {
-                        console.log(`No OCR data found for ${screenshot.filename}, running OCR...`);
+                        // Reduced logging - just perform the OCR without the verbose log
                         setTimeout(async () => {
                             try {
                                 await performOCR(fileData.file, screenshot.timestamp, fileData.url);

@@ -10,6 +10,9 @@ import {
     compareScreenshots
 } from './diffing.js';
 
+// Add this import to get the UI update function
+import { updateUIWithNewScreenshot } from './main.js';
+
 async function startCapture() {
     if (capturing) return;
 
@@ -78,7 +81,15 @@ async function startCapture() {
                 const jpgBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', imageQuality / 100));
 
                 // Pass the ISO timestamp to saveScreenshot which will format it for filenames
-                await saveScreenshot(pngBlob, jpgBlob, dbTimestamp);
+                const savedScreenshot = await saveScreenshot(pngBlob, jpgBlob, dbTimestamp);
+                
+                // Update the UI with the new screenshot
+                if (savedScreenshot && typeof updateUIWithNewScreenshot === 'function') {
+                    updateUIWithNewScreenshot(savedScreenshot);
+                } else if (savedScreenshot && window.updateUIWithNewScreenshot) {
+                    // Fallback to using window global if module import fails
+                    window.updateUIWithNewScreenshot(savedScreenshot);
+                }
 
             } catch (error) {
                 console.error('Error capturing screenshot:', error);
