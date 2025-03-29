@@ -37,6 +37,97 @@ import {
 // Add this global variable to store a reference to the update function
 let updateUIWithNewScreenshot;
 
+// Example initialization for image modal
+let currentImageIndex = 0;
+let currentImageList = [];
+
+function openLargeImageViewer(imageList, startIndex = 0) {
+    currentImageList = imageList;
+    currentImageIndex = startIndex;
+
+    // Create the lightbox elements
+    const lightbox = document.createElement('div');
+    lightbox.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80';
+
+    // Create close button
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'absolute top-4 right-4 text-white hover:text-gray-300 z-10';
+    closeBtn.innerHTML = `
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+    `;
+    closeBtn.addEventListener('click', () => {
+        lightbox.remove();
+    });
+
+    // Create image container
+    const imgContainer = document.createElement('div');
+    imgContainer.className = 'relative max-w-screen-xl max-h-screen p-4 overflow-auto';
+
+    // Create the image with a unique ID for easy selection
+    const img = document.createElement('img');
+    img.alt = 'Screenshot';
+    img.className = 'max-w-full max-h-[90vh] object-contain';
+    img.id = 'lightbox-current-image'; // Add ID for reliable selection
+
+    // Add timestamp and other metadata
+    const metaInfo = document.createElement('div');
+    metaInfo.className = 'text-white text-sm mt-2';
+    metaInfo.textContent = new Date(currentImageList[currentImageIndex].timestamp).toLocaleString();
+
+    imgContainer.appendChild(img);
+    imgContainer.appendChild(metaInfo);
+    lightbox.appendChild(closeBtn);
+    lightbox.appendChild(imgContainer);
+
+    // Add close on click outside image
+    lightbox.addEventListener('click', (e) => {
+        if (e.target === lightbox) {
+            lightbox.remove();
+        }
+    });
+
+    // Add keyboard navigation
+    document.addEventListener('keydown', function escHandler(e) {
+        if (e.key === 'Escape') {
+            lightbox.remove();
+            document.removeEventListener('keydown', escHandler);
+        }
+    });
+
+    document.body.appendChild(lightbox);
+
+    // Show the image
+    showImage(currentImageIndex);
+}
+
+// Show a given image index in the viewer
+function showImage(index) {
+    // Use ID selector instead of class selector with square brackets
+    const img = document.querySelector('#lightbox-current-image');
+    const metaInfo = document.querySelector('.text-white.text-sm.mt-2');
+    if (img && metaInfo) {
+        img.src = currentImageList[index].url;
+        metaInfo.textContent = new Date(currentImageList[index].timestamp).toLocaleString();
+    }
+}
+
+// Add arrow key navigation
+document.addEventListener('keydown', (e) => {
+    if (!currentImageList || currentImageList.length === 0) return;
+    // Left arrow
+    if (e.key === 'ArrowLeft') {
+        currentImageIndex = (currentImageIndex > 0) ? currentImageIndex - 1 : currentImageList.length - 1;
+        showImage(currentImageIndex);
+    }
+    // Right arrow
+    if (e.key === 'ArrowRight') {
+        currentImageIndex = (currentImageIndex < currentImageList.length - 1) ? currentImageIndex + 1 : 0;
+        showImage(currentImageIndex);
+    }
+});
+
 document.addEventListener('DOMContentLoaded', async () => {
     // Initialize Dexie database
     const db = await initDB();
@@ -539,83 +630,39 @@ document.addEventListener('DOMContentLoaded', async () => {
             showLightbox(item);
         }
     }
-    
+
     // Create a lightbox for viewing images
     function showLightbox(item) {
-        // Create the lightbox elements
-        const lightbox = document.createElement('div');
-        lightbox.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80';
+        // We need to gather all images in the current group to enable navigation
+        // Find the date section containing this item
+        const dateSection = document.querySelector(`.screenshot-item[data-timestamp="${item.timestamp}"]`)?.closest('.mb-6');
         
-        // Create close button
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'absolute top-4 right-4 text-white hover:text-gray-300 z-10';
-        closeBtn.innerHTML = `
-            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
-        `;
-        closeBtn.addEventListener('click', () => {
-            lightbox.remove();
-        });
-        
-        // Create image container
-        const imgContainer = document.createElement('div');
-        imgContainer.className = 'relative max-w-screen-xl max-h-screen p-4 overflow-auto';
-        
-        // Create the image
-        const img = document.createElement('img');
-        img.alt = 'Screenshot';
-        img.className = 'max-w-full max-h-[90vh] object-contain';
-        
-        // Set the image source
-        if (item.url) {
-            img.src = item.url;
-        } else {
-            // If no URL is available, try to get one
-            (async () => {
-                const fileData = await getScreenshotFile(item.fileHandle);
-                if (fileData && fileData.url) {
-                    img.src = fileData.url;
-                }
-            })();
+        if (!dateSection) {
+            console.warn('Could not find date section for image');
+            // Fallback to just showing this single image
+            openLargeImageViewer([{
+                url: item.url,
+                timestamp: item.timestamp
+            }], 0);
+            return;
         }
         
-        // Add timestamp and other metadata
-        const metaInfo = document.createElement('div');
-        metaInfo.className = 'text-white text-sm mt-2';
-        metaInfo.textContent = new Date(item.timestamp).toLocaleString();
+        // Get all image items in this date section
+        const imageItems = Array.from(dateSection.querySelectorAll('.screenshot-item'));
+        const currentIndex = imageItems.findIndex(el => el.dataset.timestamp === item.timestamp);
         
-        // Add OCR text if available
-        if (item.ocrText) {
-            const ocrText = document.createElement('div');
-            ocrText.className = 'text-white text-sm mt-2 p-2 bg-gray-800 rounded max-h-32 overflow-y-auto';
-            ocrText.textContent = item.ocrText;
-            imgContainer.appendChild(ocrText);
-        }
+        // Create array of images with their URLs and timestamps
+        const imageList = imageItems.map(el => {
+            // For each image element, find its URL (src of the contained img tag)
+            const imgElement = el.querySelector('img');
+            return {
+                url: imgElement?.src || '',
+                timestamp: el.dataset.timestamp
+            };
+        }).filter(img => img.url); // Remove any items without URLs
         
-        // Assemble the lightbox
-        imgContainer.appendChild(img);
-        imgContainer.appendChild(metaInfo);
-        lightbox.appendChild(closeBtn);
-        lightbox.appendChild(imgContainer);
-        
-        // Add close on click outside image
-        lightbox.addEventListener('click', (e) => {
-            if (e.target === lightbox) {
-                lightbox.remove();
-            }
-        });
-        
-        // Add keyboard navigation
-        document.addEventListener('keydown', function escHandler(e) {
-            if (e.key === 'Escape') {
-                lightbox.remove();
-                document.removeEventListener('keydown', escHandler);
-            }
-        });
-        
-        // Add to the page
-        document.body.appendChild(lightbox);
+        // Open the lightbox with our gathered images
+        openLargeImageViewer(imageList, Math.max(0, currentIndex));
     }
 
     // Initial data display - only if we have a directory handle
