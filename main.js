@@ -12,7 +12,8 @@ import {
     initDB,
     addScreenshot,
     searchScreenshots,
-    exportDBToJson
+    exportDBToJson,
+    saveCurrentDatabaseToFolder
 } from './storage.js';
 import {
     performOCR
@@ -132,9 +133,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             folderDisplay.textContent = `Current folder: ${folderName}`;
             openFolderButton.classList.remove('hidden');
             
-            // Export the database to the new folder
+            // Initialize database for the new folder
+            await initDB();
+            
+            // Load screenshots for the current folder
+            const allItems = await searchScreenshots('');
+            displayDailyGroups(allItems);
+            
+            // Export the database to the folder
             const dirHandle = await getDirectoryHandle();
             if (dirHandle) {
+                await saveCurrentDatabaseToFolder();
                 await exportDBToJson(dirHandle);
             }
 

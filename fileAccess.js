@@ -35,6 +35,13 @@ async function selectFolder() {
                     console.warn('Permission persistence not supported:', permError);
                 }
             }
+            
+            // Check for folder ID file, create one if it doesn't exist
+            const folderId = await getFolderIdentifier();
+            localStorage.setItem('currentFolderId', folderId);
+            
+            // Try to import database from the folder if it exists
+            await tryImportDatabaseFromFolder();
         } catch (e) {
             console.warn('Could not get folder name:', e);
             folderName = 'Selected Folder';
@@ -207,11 +214,100 @@ async function restoreDirectoryHandle() {
     return !!directoryHandle;
 }
 
+async function getFolderIdentifier() {
+    if (!directoryHandle) return null;
+    
+    try {
+        // Try to read existing identifier file
+        try {
+            const fileHandle = await directoryHandle.getFileHandle('folder-id.txt');
+            const file = await fileHandle.getFile();
+            const id = await file.text();
+            if (id && id.trim()) {
+                console.log('Found existing folder ID:', id);
+                return id.trim();
+            }
+        } catch (e) {
+            // File doesn't exist, will create a new one
+        }
+        
+        // Generate a new identifier
+        const folderId = 'folder_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
+        
+        // Save identifier to folder
+        const fileHandle = await directoryHandle.getFileHandle('folder-id.txt', { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(folderId);
+        await writable.close();
+        
+        console.log('Created new folder ID:', folderId);
+        return folderId;
+    } catch (e) {
+        console.error('Error getting/creating folder identifier:', e);
+        return 'unknown_folder';
+    }
+}
+
+async function saveDatabaseToFolder(dbJson) {
+    if (!directoryHandle) return false;
+    
+    try {
+        const filename = 'screenshot-history-db.json';
+        const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
+        const writable = await fileHandle.createWritable();
+        
+        // Convert to blob and write
+        const blob = new Blob([JSON.stringify(dbJson, null, 2)], { type: 'application/json' });
+        await writable.write(blob);
+        await writable.close();
+        
+        console.log('Database saved to folder successfully');
+        return true;
+    } catch (e) {
+        console.error('Error saving database to folder:', e);
+        return false;
+    }
+}
+
+async function loadDatabaseFromFolder() {
+    if (!directoryHandle) return null;
+    
+    try {
+        const filename = 'screenshot-history-db.json';
+        try {
+            const fileHandle = await directoryHandle.getFileHandle(filename);
+            const file = await fileHandle.getFile();
+            const content = await file.text();
+            return JSON.parse(content);
+        } catch (e) {
+            console.log('No existing database file found in this folder');
+            return null;
+        }
+    } catch (e) {
+        console.error('Error loading database from folder:', e);
+        return null;
+    }
+}
+
+async function tryImportDatabaseFromFolder() {
+    const dbData = await loadDatabaseFromFolder();
+    if (dbData) {
+        // Import will be handled by storage.js
+        console.log('Found database file in folder, will import');
+        window._pendingDbImport = dbData;
+        return true;
+    }
+    return false;
+}
+
 export {
     selectFolder,
     saveScreenshot,
     getFolderPath,
     getDirectoryHandle,
     restoreDirectoryHandle,
-    getScreenshotFileUrl
+    getScreenshotFileUrl,
+    getFolderIdentifier,
+    saveDatabaseToFolder,
+    loadDatabaseFromFolder
 };
