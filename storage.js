@@ -258,42 +258,12 @@ async function addScreenshot(timestamp, url, ocrText) {
                 // Flag for automatic UI refresh system
                 window._newScreenshotCaptured = true;
                 
-                // Check if we already have this screenshot in the UI before updating
-                const existingElement = document.querySelector(`p[data-timestamp="${timestamp}"]`);
-                if (!existingElement) {
-                    window.updateUIWithNewScreenshot(screenshotInfo);
-                    
-                    // ENHANCEMENT: Force a UI refresh for more reliable updates
-                    setTimeout(async () => {
-                        try {
-                            const allItems = await searchScreenshots('');
-                            if (window.refreshDailyGroups && typeof window.refreshDailyGroups === 'function') {
-                                window.refreshDailyGroups(allItems);
-                            }
-                        } catch (e) {
-                            console.warn('Error refreshing UI after screenshot addition:', e);
-                        }
-                    }, 500);
-                } else if (existingElement.textContent === 'Processing OCR...' && ocrText) {
-                    // Update the OCR text if it's now available
-                    existingElement.textContent = ocrText.length > 100 ? 
-                        ocrText.substring(0, 100) + '...' : ocrText;
-                }
+                // Let the global update function handle the UI refresh
+                window.updateUIWithNewScreenshot(screenshotInfo);
             }
         } catch (uiError) {
             console.warn('Error updating UI with new screenshot:', uiError);
-            
-            // ENHANCEMENT: Attempt recovery by refreshing the UI completely
-            setTimeout(async () => {
-                try {
-                    const allItems = await searchScreenshots('');
-                    if (window.refreshDailyGroups && typeof window.refreshDailyGroups === 'function') {
-                        window.refreshDailyGroups(allItems);
-                    }
-                } catch (e) {
-                    console.warn('Error during UI refresh recovery:', e);
-                }
-            }, 1000);
+            // The periodic refresh will handle it 
         }
     } catch (error) {
         console.error('Error adding screenshot to DB:', error);

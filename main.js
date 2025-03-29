@@ -78,13 +78,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Load folder path from local storage and check if we need to restore directory handle
     const folderPath = await getFolderPath();
-    const hasDirectoryHandle = await restoreDirectoryHandle();
+    const hasDirectoryHandle = await restoreDirectoryHandle(false); // Pass false to avoid auto-showing picker
     
-    if (!hasDirectoryHandle && !folderPath) {
-        // Request folder if none selected
-        await selectFolder();
-    }
-
     if (folderPath) {
         folderPathDisplay.textContent = folderPath;
         folderDisplay.textContent = `Current folder: ${folderPath}`;
@@ -101,10 +96,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     startCaptureButton.classList.add('hidden');
     pauseCaptureButton.classList.add('hidden');
     
-    // Request folder if none selected
-    if (!hasDirectoryHandle && !folderPath) {
-        await selectFolder();
-    }
+    // Don't request folder automatically - wait for user interaction
 
     // If we have a folder path and directory handle, show capture buttons
     if (await getDirectoryHandle()) {
@@ -229,8 +221,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     searchInput.addEventListener('input', async (event) => {
         const searchTerm = event.target.value;
+        window._refreshState.searchTerm = searchTerm;  // Store current search term
         const results = await searchScreenshots(searchTerm);
         displayDailyGroups(results);
+        window._refreshState.itemCount = results.length;
     });
 
     // Settings Modal event listeners
@@ -267,54 +261,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         settingsModal.classList.add('hidden');
     });
 
-    // Initial data display
-    const allItems = await searchScreenshots('');
-    displayDailyGroups(allItems);
-    
-    // ENHANCEMENT: Set up a periodic UI refresh to ensure captures are visible
-    function setupPeriodicUIRefresh() {
-        // This will refresh the UI every 10 seconds
-        const REFRESH_INTERVAL = 10000; // 10 seconds
-        
-        // Keep track of the last refresh time to avoid refreshing during user interactions
-        let lastRefreshTime = Date.now();
-        let refreshIntervalId = null;
-        
-        // Update the last refresh time whenever user interacts with the page
-        const userInteractionEvents = ['click', 'scroll', 'keydown', 'mousemove'];
-        userInteractionEvents.forEach(eventType => {
-            document.addEventListener(eventType, () => {
-                lastRefreshTime = Date.now();
-            });
-        });
-        
-        // Set up the interval that checks if refresh is needed
-        refreshIntervalId = setInterval(async () => {
-            // Only refresh if it's been at least 5 seconds since last user interaction
-            if (Date.now() - lastRefreshTime > 5000) {
-                try {
-                    // Check if we need to refresh by comparing screenshot count
-                    const currentItems = await searchScreenshots('');
-                    
-                    // Track the UI refresh in console (for debugging)
-                    if (!window._lastRefreshCount || window._lastRefreshCount !== currentItems.length) {
-                        console.log(`UI refresh: found ${currentItems.length} items`);
-                        window._lastRefreshCount = currentItems.length;
-                        displayDailyGroups(currentItems);
-                    }
-                } catch (error) {
-                    console.warn('Error during automatic UI refresh:', error);
-                }
-            }
-        }, REFRESH_INTERVAL);
-        
-        // Store the interval ID so it can be cleared if needed
-        window._uiRefreshIntervalId = refreshIntervalId;
-    }
-    
-    // Start the periodic UI refresh
-    setupPeriodicUIRefresh();
-
     // Function to display items in daily groups
     function displayDailyGroups(items) {
         dailyGroups.innerHTML = '';
@@ -336,7 +282,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Group items by date
         const grouped = groupByDate(validItems);
         
-        // Create a section for each date
+        // Create sections for each date
         for (const date in grouped) {
             const dateSection = document.createElement('div');
             dateSection.className = 'mb-6';
@@ -353,116 +299,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             // Add each item to the grid
             grouped[date].forEach(item => {
-                const gridItem = document.createElement('div');
-                gridItem.className = 'rounded overflow-hidden shadow-lg bg-gray-800';
-                
-                // Check if this is a screenshot or a summary
-                if (item.fileHandle || item.url) {
-                    // It's a screenshot
-                    const imgContainer = document.createElement('div');
-                    imgContainer.className = 'h-40 relative bg-gray-700 flex items-center justify-center';
-                    
-                    const img = document.createElement('img');
-                    if (item.url) {
-                        img.src = item.url;
-                    } else {
-                        // If we don't have a URL yet, try to get one
-                        img.dataset.timestamp = item.timestamp;
-                        img.dataset.filename = item.filename;
-                        loadImageForElement(img, item);
-                    }
-                    img.alt = item.ocrText || 'Screenshot';
-                    img.className = 'w-full h-32 object-cover';
-                    
-                    // Display a loading indicator while the image loads
-                    const loadingIndicator = document.createElement('div');
-                    loadingIndicator.className = 'absolute inset-0 flex items-center justify-center';
-                    loadingIndicator.innerHTML = '<span class="animate-pulse">Loading...</span>';
-                    
-                    // Handle successful image loading
-                    img.onload = () => {
-                        loadingIndicator.remove();
-                    };
-                    
-                    // Handle image loading failure without recursively retrying
-                    img.onerror = (e) => {
-                        // Reduce warning verbosity - log only the first few errors
-                        if (!window._failedImageCount) window._failedImageCount = 0;
-                        window._failedImageCount++;
-                        
-                        if (window._failedImageCount <= 3) {
-                            console.warn(`Failed to load image (${window._failedImageCount} of 3 shown)`);
-                        } else if (window._failedImageCount === 4) {
-                            console.warn(`Additional image loading errors will be suppressed`);
-                        }
-                        
-                        // Create a shared placeholder image URL instead of generating it each time
-                        const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"%3E%3C/svg%3E';
-                        
-                        // Set a placeholder image to stop error cascade
-                        img.src = placeholderImage;
-                        img.style.backgroundColor = "#333";
-                        
-                        // Prevent further error handling
-                        img.onerror = null;
-                    };
-                    
-                    imgContainer.appendChild(loadingIndicator);
-                    imgContainer.appendChild(img);
-                    
-                    // Extract repeated text container creation into a function
-                    function createTextContainer(item, timestamp) {
-                        const container = document.createElement('div');
-                        container.className = 'px-4 py-2';
-                        
-                        const time = document.createElement('p');
-                        time.textContent = formatTime(timestamp);
-                        time.className = 'text-sm text-gray-400';
-                        
-                        const text = document.createElement('p');
-                        text.textContent = item.ocrText ? truncateText(item.ocrText, 100) : 'No text detected';
-                        text.className = 'text-sm overflow-hidden overflow-ellipsis max-h-16';
-                        
-                        // Store timestamp in data attribute for OCR updates
-                        if (timestamp) {
-                            text.dataset.timestamp = timestamp;
-                        }
-                        
-                        container.appendChild(time);
-                        container.appendChild(text);
-                        return container;
-                    }
-                    
-                    // Use the extracted function
-                    gridItem.appendChild(imgContainer);
-                    gridItem.appendChild(createTextContainer(item, item.timestamp));
-                } else {
-                    // It's a summary - simplified version with the same pattern
-                    gridItem.className += ' summary-tile bg-blue-900 text-white';
-                    
-                    const summaryContainer = document.createElement('div');
-                    summaryContainer.className = 'px-4 py-3';
-                    
-                    const summaryTitle = document.createElement('h3');
-                    summaryTitle.textContent = 'Activity Summary';
-                    summaryTitle.className = 'font-bold mb-2';
-                    
-                    const timeRange = document.createElement('p');
-                    timeRange.textContent = `${formatTime(item.startTime)} - ${formatTime(item.endTime)}`;
-                    timeRange.className = 'text-xs text-blue-300 mb-2';
-                    
-                    const summaryText = document.createElement('p');
-                    summaryText.textContent = item.text;
-                    summaryText.className = 'text-sm overflow-hidden overflow-ellipsis max-h-32';
-                    
-                    summaryContainer.appendChild(summaryTitle);
-                    summaryContainer.appendChild(timeRange);
-                    summaryContainer.appendChild(summaryText);
-                    
-                    gridItem.appendChild(summaryContainer);
-                }
-                
-                grid.appendChild(gridItem);
+                const itemElement = document.createElement('div');
+                itemElement.className = 'screenshot-item';
+                itemElement.innerHTML = `<img src="${item.url}" alt="Screenshot">`;
+                grid.appendChild(itemElement);
             });
             
             dateSection.appendChild(grid);
@@ -473,61 +313,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Make displayDailyGroups available globally for refreshing
     window.refreshDailyGroups = displayDailyGroups;
 
-    // New helper function to load images - with additional error prevention
-    async function loadImageForElement(imgElement, item, isFallback = false) {
-        // Guard against multiple loading attempts
-        if (imgElement.dataset.loadAttempted === 'true') {
-            return; // Prevent recursive loading attempts
-        }
-        
-        try {
-            // Mark this element as having a loading attempt
-            imgElement.dataset.loadAttempted = 'true';
-            
-            if (item.fileHandle) {
-                // Get file directly from the fileHandle
-                const fileData = await getScreenshotFile(item.fileHandle);
-                if (fileData && fileData.url) {
-                    imgElement.src = fileData.url;
-                    return;
-                }
-            }
-            
-            if (isFallback) {
-                // Try additional fallback methods
-                if (window._savedBlobs && window._savedBlobs[item.timestamp]) {
-                    const newUrl = URL.createObjectURL(window._savedBlobs[item.timestamp]);
-                    imgElement.src = newUrl;
-                } else {
-                    const fallbackUrl = await getScreenshotFileUrl(item.timestamp);
-                    if (fallbackUrl) {
-                        imgElement.src = fallbackUrl;
-                    } else {
-                        // If all loading attempts fail, set a placeholder and stop trying
-                        imgElement.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"%3E%3C/svg%3E';
-                        imgElement.alt = "Image unavailable";
-                        imgElement.style.backgroundColor = "#333";
-                        // Remove loading indicator
-                        const container = imgElement.closest('.relative');
-                        if (container) {
-                            const loadingIndicator = container.querySelector('div');
-                            if (loadingIndicator) {
-                                loadingIndicator.textContent = "Image unavailable";
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (e) {
-            console.error('Error loading image:', e);
-            // Set a placeholder image to prevent further loading attempts
-            imgElement.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"%3E%3C/svg%3E';
-            imgElement.alt = "Image unavailable";
-            imgElement.style.backgroundColor = "#333";
-        }
-    }
-
-    // Group items by date - add extra validation
+    // Group items by date - this function was missing
     function groupByDate(items) {
         return items.reduce((groups, item) => {
             // Get date from timestamp or endTime
@@ -567,7 +353,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, {});
     }
 
-    // Format date for display
+    // Format date for display - this function was missing
     function formatDate(dateStr) {
         try {
             // Handle different date formats
@@ -597,311 +383,93 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Format time for display - improved error handling
-    function formatTime(timestamp) {
-        // Handle undefined or null timestamps gracefully
-        if (!timestamp) {
-            return 'Unknown time';
-        }
-        
-        try {
-            let date;
-            if (typeof timestamp === 'string') {
-                // First try standard ISO format
-                date = new Date(timestamp);
-                
-                // If that fails or gives an invalid date, try other formats
-                if (isNaN(date.getTime())) {
-                    // Handle our non-standard format with colons or dashes
-                    if (timestamp.includes(':') || timestamp.includes('-')) {
-                        // Replace colons with hyphens for consistency
-                        const cleanTimestamp = timestamp
-                            .replace(/:/g, '-')
-                            .replace('Z', '')
-                            .replace('T', ' ');
-                        
-                        // Try to parse as YYYY-MM-DD HH-MM-SS format
-                        const parts = cleanTimestamp.split(' ');
-                        if (parts.length === 2) {
-                            const [datePart, timePart] = parts;
-                            const [year, month, day] = datePart.split('-');
-                            const [hour, minute, second] = timePart.split('-');
-                            
-                            date = new Date(
-                                parseInt(year),
-                                parseInt(month) - 1, // Month is 0-based
-                                parseInt(day),
-                                parseInt(hour),
-                                parseInt(minute),
-                                parseInt(second)
-                            );
-                        }
-                    } else if (timestamp.length >= 14) {
-                        // Try to parse YYYYMMDDHHMMSS format
-                        const year = timestamp.substring(0, 4);
-                        const month = timestamp.substring(4, 6);
-                        const day = timestamp.substring(6, 8);
-                        const hour = timestamp.substring(8, 10);
-                        const minute = timestamp.substring(10, 12);
-                        const second = timestamp.substring(12, 14);
-                        
-                        date = new Date(
-                            parseInt(year),
-                            parseInt(month) - 1, // Month is 0-based
-                            parseInt(day),
-                            parseInt(hour),
-                            parseInt(minute),
-                            parseInt(second)
-                        );
-                    }
-                }
-            } else {
-                date = new Date(timestamp);
-            }
-            
-            if (isNaN(date.getTime())) {
-                throw new Error('Invalid date');
-            }
-            
-            return date.toLocaleTimeString('en-US', {
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        } catch (error) {
-            // Log warning but don't clutter console
-            // console.warn('Error formatting time:', timestamp);
-            return typeof timestamp === 'string' ? 
-                timestamp.split('T')[1]?.substring(0, 5) || 'Unknown time' : 
-                'Unknown time';
-        }
-    }
-
-    // Truncate text to specified length
-    function truncateText(text, maxLength) {
-        if (text.length <= maxLength) return text;
-        return text.substring(0, maxLength) + '...';
+    // Initial data display - only if we have a directory handle
+    if (await getDirectoryHandle()) {
+        const allItems = await searchScreenshots('');
+        displayDailyGroups(allItems);
+    } else {
+        // Show empty state when no folder selected
+        dailyGroups.innerHTML = '<div class="text-center py-10 text-gray-500">Please select a folder to store screenshots.</div>';
     }
     
-    // Create a function to add a new screenshot to the UI - modified for improved reliability
+    // Simplified UI refresh mechanism
+    function setupSimpleUIRefresh() {
+        // Use a single global state object to track refresh state
+        window._refreshState = {
+            interval: 6000,           // Refresh every 6 seconds
+            lastUserAction: Date.now(),
+            searchTerm: '',           // Track current search term
+            isRefreshing: false,      // Prevent concurrent refreshes
+            itemCount: 0              // Track item count for change detection
+        };
+        
+        // Update the last user action time on user interaction
+        const userEvents = ['click', 'scroll', 'keydown', 'mousemove'];
+        userEvents.forEach(event => {
+            document.addEventListener(event, () => {
+                window._refreshState.lastUserAction = Date.now();
+            });
+        });
+        
+        // Set up the refresh interval
+        setInterval(async () => {
+            try {
+                // Skip if already refreshing or user was active in the last 2 seconds
+                if (window._refreshState.isRefreshing || 
+                    Date.now() - window._refreshState.lastUserAction < 2000) {
+                    return;
+                }
+                
+                window._refreshState.isRefreshing = true;
+                
+                // Only proceed if we have a directory handle
+                if (!await getDirectoryHandle()) {
+                    window._refreshState.isRefreshing = false;
+                    return;
+                }
+                
+                // Get results using the current search term
+                const searchTerm = window._refreshState.searchTerm;
+                const items = await searchScreenshots(searchTerm);
+                
+                // Only refresh if item count changed or forced refresh flag is set
+                if (items.length !== window._refreshState.itemCount || window._newScreenshotCaptured) {
+                    console.log(`UI refresh: found ${items.length} items with filter "${searchTerm || 'none'}"`);
+                    displayDailyGroups(items);
+                    window._refreshState.itemCount = items.length;
+                    window._newScreenshotCaptured = false;
+                }
+                
+                window._refreshState.isRefreshing = false;
+            } catch (error) {
+                console.warn('Error during UI refresh:', error);
+                window._refreshState.isRefreshing = false;
+            }
+        }, window._refreshState.interval);
+    }
+    
+    // Start the simplified UI refresh
+    setupSimpleUIRefresh();
+
+    // Replace the complex UI update function with a simpler version that just flags for refresh
     async function addNewScreenshotToUI(screenshotInfo) {
         if (!screenshotInfo) return;
         
-        // ENHANCEMENT: Force a full refresh for the first few screenshots
-        // This helps ensure the UI is properly populated when starting from empty
-        if (!window._totalAddedScreenshots) window._totalAddedScreenshots = 0;
-        window._totalAddedScreenshots++;
+        // Set flag for the periodic refresh to pick up
+        window._newScreenshotCaptured = true;
         
-        if (window._totalAddedScreenshots <= 5) {
-            // For the first few screenshots, do a full refresh
-            setTimeout(async () => {
-                try {
-                    const allItems = await searchScreenshots('');
-                    displayDailyGroups(allItems);
-                } catch (e) {
-                    console.warn('Error during full UI refresh:', e);
-                }
-            }, 500);
-            return;
-        }
-        
-        // For later screenshots, use the existing incremental update approach
-        // Prevent duplicate additions - check if this screenshot is already in the UI
-        if (document.querySelector(`p[data-timestamp="${screenshotInfo.timestamp}"]`)) {
-            // Screenshot already exists in UI, don't add it again
-            return;
-        }
-        
-        try {
-            // Get the current date from the screenshot timestamp
-            const date = screenshotInfo.timestamp.split('T')[0];
-            const formattedDate = formatDate(date);
-            
-            // Create grid item for the new screenshot
-            const gridItem = document.createElement('div');
-            gridItem.className = 'rounded overflow-hidden shadow-lg bg-gray-800';
-            
-            const imgContainer = document.createElement('div');
-            imgContainer.className = 'h-40 relative bg-gray-700 flex items-center justify-center';
-            
-            const img = document.createElement('img');
-            img.src = screenshotInfo.url;
-            img.alt = 'New Screenshot';
-            img.className = 'w-full h-32 object-cover';
-            
-            const loadingIndicator = document.createElement('div');
-            loadingIndicator.className = 'absolute inset-0 flex items-center justify-center';
-            loadingIndicator.innerHTML = '<span class="animate-pulse">Loading...</span>';
-            
-            img.onload = () => {
-                loadingIndicator.remove();
-            };
-            
-            // Handle image loading failure without recursively retrying
-            img.onerror = (e) => {
-                // Reduce warning verbosity - log only the first few errors
-                if (!window._failedImageCount) window._failedImageCount = 0;
-                window._failedImageCount++;
-                
-                if (window._failedImageCount <= 3) {
-                    console.warn(`Failed to load image (${window._failedImageCount} of 3 shown)`);
-                } else if (window._failedImageCount === 4) {
-                    console.warn(`Additional image loading errors will be suppressed`);
-                }
-                
-                loadingIndicator.innerHTML = "Image not available";
-                
-                // Set a placeholder image to stop error cascade
-                img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"%3E%3C/svg%3E';
-                img.style.backgroundColor = "#333";
-                
-                // Prevent further error handling
-                img.onerror = null;
-            };
-            
-            imgContainer.appendChild(loadingIndicator);
-            imgContainer.appendChild(img);
-            
-            const textContainer = document.createElement('div');
-            textContainer.className = 'px-4 py-2';
-            
-            const time = document.createElement('p');
-            time.textContent = formatTime(screenshotInfo.timestamp);
-            time.className = 'text-sm text-gray-400';
-            
-            const text = document.createElement('p');
-            text.textContent = 'Processing OCR...';
-            text.className = 'text-sm overflow-hidden overflow-ellipsis max-h-16';
-            
-            // Store the timestamp in a data attribute to update the OCR text later
-            text.dataset.timestamp = screenshotInfo.timestamp;
-            
-            textContainer.appendChild(time);
-            textContainer.appendChild(text);
-            
-            gridItem.appendChild(imgContainer);
-            gridItem.appendChild(textContainer);
-            
-            // Find section for today using DOM traversal instead of custom selector
-            let todaySection = null;
-            const headings = document.querySelectorAll('h2');
-            
-            // Loop through all h2 elements to find the one with matching date text
-            for (const heading of headings) {
-                if (heading.textContent === formattedDate) {
-                    todaySection = heading;
-                    break;
-                }
+        // Optionally force an immediate refresh if it's been a while since the last one
+        const timeSinceLastRefresh = Date.now() - (window._lastRefreshTime || 0);
+        if (timeSinceLastRefresh > 2000) {  // If more than 2 seconds since last refresh
+            try {
+                window._lastRefreshTime = Date.now();
+                const currentFilter = window._refreshState?.searchTerm || '';
+                const items = await searchScreenshots(currentFilter);
+                displayDailyGroups(items);
+                window._refreshState.itemCount = items.length;
+            } catch (error) {
+                console.warn('Error during immediate refresh:', error);
             }
-            
-            if (!todaySection) {
-                // Today's section doesn't exist yet, create it
-                const newDateSection = document.createElement('div');
-                newDateSection.className = 'mb-6';
-                
-                const dateHeading = document.createElement('h2');
-                dateHeading.textContent = formattedDate;
-                dateHeading.className = 'text-xl font-bold mb-4 border-b border-gray-600 pb-2';
-                newDateSection.appendChild(dateHeading);
-                
-                const grid = document.createElement('div');
-                grid.className = 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4';
-                grid.appendChild(gridItem); // Add the new screenshot
-                
-                newDateSection.appendChild(grid);
-                
-                // Add the new section at the top of dailyGroups
-                if (dailyGroups.firstChild) {
-                    dailyGroups.insertBefore(newDateSection, dailyGroups.firstChild);
-                } else {
-                    dailyGroups.appendChild(newDateSection);
-                }
-                
-                // If this is the first item, clear any "no items" message
-                const noItemsMessage = dailyGroups.querySelector('.text-gray-500');
-                if (noItemsMessage) {
-                    noItemsMessage.remove();
-                }
-            } else {
-                // Find today's grid
-                const parentSection = todaySection.closest('div');
-                const grid = parentSection.querySelector('.grid');
-                
-                // Add the new screenshot at the beginning of the grid
-                if (grid.firstChild) {
-                    grid.insertBefore(gridItem, grid.firstChild);
-                } else {
-                    grid.appendChild(gridItem);
-                }
-            }
-            
-            // Update the OCR text when it becomes available (poll a few times)
-            let attempts = 0;
-            const maxAttempts = 5;
-            const checkOcrText = async () => {
-                attempts++;
-                try {
-                    // Make sure we have a live database connection
-                    if (!db || !db.isOpen()) {
-                        console.log('Database not open when checking OCR, initializing');
-                        await initDB();
-                    }
-                    
-                    // Get the screenshot record from the database
-                    const dbEntry = await db.screenshots.get(screenshotInfo.timestamp);
-                    
-                    if (dbEntry && dbEntry.ocrText) {
-                        // Update the text element with OCR text
-                        const textElements = document.querySelectorAll(`p[data-timestamp="${screenshotInfo.timestamp}"]`);
-                        textElements.forEach(el => {
-                            el.textContent = dbEntry.ocrText ? truncateText(dbEntry.ocrText, 100) : 'No text detected';
-                        });
-                        return;
-                    }
-                    
-                    // If we haven't reached max attempts and no OCR text yet, try again
-                    if (attempts < maxAttempts) {
-                        setTimeout(checkOcrText, 2000); // Try again in 2 seconds
-                    } else {
-                        // Give up after max attempts
-                        const textElements = document.querySelectorAll(`p[data-timestamp="${screenshotInfo.timestamp}"]`);
-                        textElements.forEach(el => {
-                            el.textContent = 'OCR processing...';
-                        });
-                    }
-                } catch (error) {
-                    console.error('Error checking OCR text:', error);
-                    
-                    // Attempt to reopen the database if it's a DatabaseClosedError
-                    if (error.name === 'DatabaseClosedError') {
-                        console.log('Database was closed, attempting to reopen');
-                        try {
-                            await initDB();
-                            // Try again immediately after reopening
-                            if (attempts < maxAttempts) {
-                                setTimeout(checkOcrText, 1000);
-                            }
-                        } catch (dbError) {
-                            console.error('Failed to reopen database:', dbError);
-                        }
-                    }
-                }
-            };
-            
-            // Start checking for OCR text after a short delay
-            setTimeout(checkOcrText, 2000);
-            
-        } catch (error) {
-            console.error('Error adding new screenshot to UI:', error);
-            
-            // In case of error, trigger a full UI refresh as fallback
-            setTimeout(async () => {
-                try {
-                    const allItems = await searchScreenshots('');
-                    displayDailyGroups(allItems);
-                } catch (e) {
-                    console.warn('Error during fallback UI refresh:', e);
-                }
-            }, 1000);
         }
     }
     

@@ -18,33 +18,28 @@ additional explanations what you change are nice to have but not necessary.
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Screenshot History</title>
   <link href="style.css" rel="stylesheet">
-  <!-- Load manifest with better error handling -->
+  <!-- Improved manifest error handling -->
   <script>
     // Preload error handler for manifest
     window.addEventListener('error', function(e) {
       // Intercept manifest loading errors
-      if (e.target && e.target.rel === 'manifest') {
+      if (e.target && (e.target.rel === 'manifest' || 
+         (e.target.href && e.target.href.includes('manifest.json')))) {
         console.warn('Manifest loading error intercepted. PWA functionality may be limited in this environment.');
         e.preventDefault();
-        
-        // Create a simple local manifest to prevent further errors
-        const fallbackManifest = {
-          name: "Screenshot History",
-          short_name: "Screenshot History",
-          start_url: "./",
-          display: "standalone",
-          background_color: "#111827",
-          theme_color: "#111827",
-          icons: []
-        };
-        
-        // Cache it to prevent repeated network errors
-        localStorage.setItem('fallbackManifest', JSON.stringify(fallbackManifest));
-        
-        // Return true to indicate we handled the error
         return true;
       }
     }, true);
+    
+    // Fallback for fetch errors related to manifest
+    window.addEventListener('unhandledrejection', function(e) {
+      if (e.reason && e.reason.message && 
+         (e.reason.message.includes('manifest.json') || 
+          e.reason.message.includes('CORS'))) {
+        console.warn('CORS error for manifest.json - this is expected in development environment');
+        e.preventDefault();
+      }
+    });
   </script>
   <link rel="manifest" href="manifest.json" onerror="console.warn('Manifest could not be loaded, using fallback')">
   <!-- Favicon: A white box --> 

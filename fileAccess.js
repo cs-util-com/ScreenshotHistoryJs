@@ -56,7 +56,7 @@ async function selectFolder() {
         if (error.name === 'AbortError') {
             console.log('Folder selection was cancelled by user');
         } else if (error.name === 'SecurityError') {
-            alert('Permission to access files was denied. Please try again and grant permission.');
+            console.warn('Permission to access files was denied or not in a user gesture context.');
         }
         
         return null;
@@ -277,12 +277,17 @@ async function getScreenshotFileUrl(timestamp) {
     }
 }
 
-async function restoreDirectoryHandle() {
+async function restoreDirectoryHandle(showPickerOnFail = false) {
     const hasStoredHandle = localStorage.getItem('hasDirectoryHandle') === 'true';
     if (hasStoredHandle && !directoryHandle) {
         try {
-            // Attempt to request permission again
-            return !!(await selectFolder());
+            // Only attempt to auto-request folder if showPickerOnFail is true
+            if (showPickerOnFail) {
+                return !!(await selectFolder());
+            } else {
+                // Just return false without showing picker - user will need to click the button
+                return false;
+            }
         } catch (e) {
             console.warn('Could not auto-request folder permission:', e);
             return false;

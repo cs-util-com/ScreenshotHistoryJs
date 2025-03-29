@@ -94,38 +94,19 @@ async function startCapture() {
                 
                 // Only update UI if screenshot was successfully saved
                 if (savedScreenshot) {
-                    // ENHANCEMENT: Flag that new screenshot is available for automatic UI refresh
+                    // Flag that a new screenshot is available for auto refresh
                     window._newScreenshotCaptured = true;
                     
-                    // Try both ways to update the UI
+                    // Try to update UI if the function is available
                     try {
-                        // Direct function call if available
                         if (typeof updateUIWithNewScreenshot === 'function') {
                             updateUIWithNewScreenshot(savedScreenshot);
-                        }
-                        
-                        // Also try window global as backup
-                        if (window.updateUIWithNewScreenshot) {
+                        } else if (window.updateUIWithNewScreenshot) {
                             window.updateUIWithNewScreenshot(savedScreenshot);
                         }
-                        
-                        // Force a full refresh for more reliable updates
-                        setTimeout(async () => {
-                            try {
-                                // Try to refresh the entire UI after a short delay
-                                const storageModule = await import('./storage.js');
-                                if (storageModule && storageModule.searchScreenshots) {
-                                    const allItems = await storageModule.searchScreenshots('');
-                                    if (window.refreshDailyGroups) {
-                                        window.refreshDailyGroups(allItems);
-                                    }
-                                }
-                            } catch (e) {
-                                console.warn('Error during UI refresh after capture:', e);
-                            }
-                        }, 1000);
                     } catch (uiError) {
                         console.warn('Error updating UI:', uiError);
+                        // The periodic refresh will handle it
                     }
                 }
 
