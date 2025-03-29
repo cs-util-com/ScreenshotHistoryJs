@@ -345,38 +345,45 @@ async function scanFolderForScreenshots() {
                     // Extract timestamp from filename
                     const timestampPart = filename.replace('screenshot_', '').replace('.png', '').replace('.jpg', '');
                     
-                    // More robust timestamp conversion
+                    // Improved timestamp parsing with better millisecond handling
                     let isoTimestamp;
                     
                     try {
-                        // First try to parse it as our formatted timestamp
-                        const parts = timestampPart.split('_');
-                        if (parts.length === 2) {
-                            // It's in the expected format YYYY-MM-DD_HH-MM-SS-ms
-                            const [datePart, timePart] = parts;
-                            // Convert to ISO format
-                            isoTimestamp = datePart + 'T' + 
-                                timePart.replace(/-/g, (match, offset) => {
-                                    // Only replace first two dashes to colons
-                                    return offset < 5 ? ':' : match;
-                                }) + 'Z';
+                        // Parse timestamps like "2025-03-29_03-18-57-386"
+                        if (timestampPart.includes('_')) {
+                            const [datePart, timePart] = timestampPart.split('_');
+                            
+                            // Parse the time part which may have milliseconds as the 4th segment
+                            const timeSegments = timePart.split('-');
+                            
+                            if (timeSegments.length >= 3) {
+                                // Format: YYYY-MM-DD_HH-MM-SS-ms
+                                const hours = timeSegments[0];
+                                const minutes = timeSegments[1];
+                                const seconds = timeSegments[2];
+                                const milliseconds = timeSegments.length > 3 ? `.${timeSegments[3]}` : '';
+                                
+                                // Construct a proper ISO timestamp
+                                isoTimestamp = `${datePart}T${hours}:${minutes}:${seconds}${milliseconds}Z`;
+                                
+                                // Verify it parses correctly
+                                const testDate = new Date(isoTimestamp);
+                                if (isNaN(testDate.getTime())) {
+                                    // If the timestamp with milliseconds fails, try without milliseconds
+                                    isoTimestamp = `${datePart}T${hours}:${minutes}:${seconds}Z`;
+                                    const testDateNoMs = new Date(isoTimestamp);
+                                    if (isNaN(testDateNoMs.getTime())) {
+                                        throw new Error('Invalid timestamp format');
+                                    }
+                                }
+                            } else {
+                                throw new Error('Invalid time segments');
+                            }
                         } else {
-                            // Try another approach - use the current implementation
-                            isoTimestamp = timestampPart
-                                .replace('_', 'T')
-                                .replace(/-/g, (match, offset) => {
-                                    // Replace the first 3 dashes to restore ISO format
-                                    return offset < 10 ? ':' : match;
-                                }) + 'Z';
-                        }
-                        
-                        // Verify it's a valid date
-                        const testDate = new Date(isoTimestamp);
-                        if (isNaN(testDate.getTime())) {
-                            throw new Error('Invalid timestamp');
+                            throw new Error('Timestamp missing date-time separator');
                         }
                     } catch (e) {
-                        // If we can't parse it properly, create a fake but valid timestamp
+                        // If we can't parse it with our improved method, try the file's modified time
                         // This ensures we can still display the image even without proper metadata
                         console.warn(`Could not parse timestamp from filename: ${filename}`, e);
                         
@@ -393,7 +400,25 @@ async function scanFolderForScreenshots() {
                         fileHandle: entry
                     });
                 } catch (e) {
-                    console.warn(`Could not process filename: ${filename}`, e);
+                    // This is a fallback for files that couldn't be processed at all
+                    // We'll use a generated timestamp based on the file's lastModified date
+                    try {
+                        const file = await entry.getFile();
+                        const fallbackTimestamp = file.lastModified ? 
+                            new Date(file.lastModified).toISOString() : 
+                            new Date().toISOString();
+                        
+                        screenshots.push({
+                            filename,
+                            timestamp: fallbackTimestamp,
+                            fileHandle: entry,
+                            isReconstructed: true // Flag to indicate this timestamp was reconstructed
+                        });
+                        
+                        console.log(`Recovered file with generated timestamp: ${filename} -> ${fallbackTimestamp}`);
+                    } catch (fallbackErr) {
+                        console.error(`Could not process file even with fallback: ${filename}`, fallbackErr);
+                    }
                 }
             }
         }

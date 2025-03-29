@@ -340,9 +340,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                         loadingIndicator.remove();
                     };
                     
-                    // Handle image loading failure - without recursive retry
+                    // Handle image loading failure without recursively retrying
                     img.onerror = (e) => {
-                        console.warn("Failed to load image");
+                        // Reduce warning verbosity - log only the first few errors
+                        if (!window._failedImageCount) window._failedImageCount = 0;
+                        window._failedImageCount++;
+                        
+                        if (window._failedImageCount <= 3) {
+                            console.warn(`Failed to load image (${window._failedImageCount} of 3 shown)`);
+                        } else if (window._failedImageCount === 4) {
+                            console.warn(`Additional image loading errors will be suppressed`);
+                        }
+                        
                         loadingIndicator.innerHTML = "Image not available";
                         
                         // Set a placeholder image to stop error cascade
@@ -652,7 +661,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             // Handle image loading failure without recursively retrying
             img.onerror = (e) => {
-                console.warn(`Failed to load new image: ${screenshotInfo.timestamp}`);
+                // Reduce warning verbosity - log only the first few errors
+                if (!window._failedImageCount) window._failedImageCount = 0;
+                window._failedImageCount++;
+                
+                if (window._failedImageCount <= 3) {
+                    console.warn(`Failed to load image (${window._failedImageCount} of 3 shown)`);
+                } else if (window._failedImageCount === 4) {
+                    console.warn(`Additional image loading errors will be suppressed`);
+                }
+                
                 loadingIndicator.innerHTML = "Image not available";
                 
                 // Set a placeholder image to stop error cascade
