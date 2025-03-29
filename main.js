@@ -124,6 +124,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const diffThreshold = localStorage.getItem('diffThreshold') || 3;
     const retentionPeriod = localStorage.getItem('retentionPeriod') || 90;
     const ocrLanguage = localStorage.getItem('ocrLanguage') || 'eng';
+    const ocrResolution = localStorage.getItem('ocrResolution') || 1280;
     const modelProvider = localStorage.getItem('modelProvider') || 'openai';
     const openaiApiKey = localStorage.getItem('openaiApiKey') || '';
     const geminiApiKey = localStorage.getItem('geminiApiKey') || '';
@@ -135,6 +136,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('diffThreshold').value = diffThreshold;
     document.getElementById('retentionPeriod').value = retentionPeriod;
     document.getElementById('ocrLanguage').value = ocrLanguage;
+    document.getElementById('ocrResolution').value = ocrResolution;
     document.getElementById('modelProvider').value = modelProvider;
     document.getElementById('openaiApiKey').value = openaiApiKey;
     document.getElementById('geminiApiKey').value = geminiApiKey;
@@ -296,6 +298,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const diffThreshold = document.getElementById('diffThreshold').value;
         const retentionPeriod = document.getElementById('retentionPeriod').value;
         const ocrLanguage = document.getElementById('ocrLanguage').value;
+        const ocrResolution = document.getElementById('ocrResolution').value;
         const modelProvider = document.getElementById('modelProvider').value;
         const openaiApiKey = document.getElementById('openaiApiKey').value;
         const geminiApiKey = document.getElementById('geminiApiKey').value;
@@ -306,11 +309,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         localStorage.setItem('diffThreshold', diffThreshold);
         localStorage.setItem('retentionPeriod', retentionPeriod);
         localStorage.setItem('ocrLanguage', ocrLanguage);
+        localStorage.setItem('ocrResolution', ocrResolution);
         localStorage.setItem('modelProvider', modelProvider);
         localStorage.setItem('openaiApiKey', openaiApiKey);
         localStorage.setItem('geminiApiKey', geminiApiKey);
         localStorage.setItem('claudeApiKey', claudeApiKey);
         localStorage.setItem('localModelUrl', localModelUrl);
+
+        // Show confirmation notification
+        if (window.showNotification) {
+            window.showNotification('Settings saved successfully', 'success', 2000);
+        }
 
         settingsModal.classList.add('hidden');
     });

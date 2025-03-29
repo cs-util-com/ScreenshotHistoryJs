@@ -8,6 +8,14 @@ const PLACEHOLDER_IMAGE = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/20
 // Default English language code - ALWAYS use 'eng', not 'en'
 const DEFAULT_LANGUAGE = 'eng';
 
+// OCR processing configuration
+const OCR_CONFIG = {
+  maxImageWidth: 1280,     // Max width for OCR processing
+  maxImageHeight: 800,     // Max height for OCR processing
+  maxRetries: 2,           // Number of retries with reduced resolution
+  rescaleFactor: 0.5       // How much to reduce on each retry
+};
+
 // Minimal worker logger to reduce console spam
 const minimalLogger = {
     logger: m => {
@@ -17,6 +25,54 @@ const minimalLogger = {
     },
     errorHandler: err => console.error('Tesseract Worker Error:', err)
 };
+
+// Downscale image for OCR processing while maintaining aspect ratio
+async function downscaleImageForOCR(imageBlob, maxWidth = OCR_CONFIG.maxImageWidth, maxHeight = OCR_CONFIG.maxImageHeight) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            // Create canvas for resizing
+            const canvas = document.createElement('canvas');
+            
+            // Calculate new dimensions while maintaining aspect ratio
+            let width = img.width;
+            let height = img.height;
+            
+            // Only downscale if the image is larger than limits
+            if (width > maxWidth || height > maxHeight) {
+                const ratio = Math.min(maxWidth / width, maxHeight / height);
+                width = Math.floor(width * ratio);
+                height = Math.floor(height * ratio);
+                
+                console.log(`Downscaling image for OCR from ${img.width}x${img.height} to ${width}x${height}`);
+            } else {
+                // If already small enough, just use the original
+                URL.revokeObjectURL(img.src);
+                resolve(imageBlob);
+                return;
+            }
+            
+            // Resize the image
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            // Convert to Blob
+            canvas.toBlob(blob => {
+                URL.revokeObjectURL(img.src);
+                resolve(blob);
+            }, 'image/jpeg', 0.85);
+        };
+        
+        img.onerror = () => {
+            URL.revokeObjectURL(img.src);
+            reject(new Error('Failed to load image for downscaling'));
+        };
+        
+        img.src = URL.createObjectURL(imageBlob);
+    });
+}
 
 async function performOCR(imageSource, timestamp, imageUrl) {
     try {
@@ -70,67 +126,111 @@ async function performOCR(imageSource, timestamp, imageUrl) {
             }
         }
         
-        // Create a Tesseract worker with minimal logging
-        // Add a timeout to prevent the worker from hanging
-        const worker = await Tesseract.createWorker(minimalLogger);
-        
-        let OCRcompleted = false;
-        
+        // Downscale the image for OCR to prevent memory issues
+        let processingBlob;
         try {
-            // Validate blob before passing to Tesseract
-            if (imageBlob.size === 0) {
-                throw new Error('Empty image blob');
-            }
-            
+            processingBlob = await downscaleImageForOCR(imageBlob);
+        } catch (e) {
+            console.error('Error downscaling image for OCR:', e);
+            processingBlob = imageBlob; // Fallback to original if downscaling fails
+        }
+        
+        let retryCount = 0;
+        let success = false;
+        let ocrText = '';
+        
+        // Try OCR with progressive downscaling if needed
+        while (retryCount <= OCR_CONFIG.maxRetries && !success) {
             try {
-                await worker.loadLanguage(ocrLanguage);
-                await worker.initialize(ocrLanguage);
+                // Create a Tesseract worker with minimal logging
+                const worker = await Tesseract.createWorker(minimalLogger);
                 
-                // Mark language as loaded successfully
-                languageLoadAttempts[ocrLanguage] = 'loaded';
-                
-                // Perform recognition
-                const { data } = await worker.recognize(imageBlob);
-                OCRcompleted = true;
-                await addScreenshot(timestamp, finalImageUrl, data.text);
-            } catch (langError) {
-                console.error(`Failed to load language '${ocrLanguage}':`, langError);
-                languageLoadAttempts[ocrLanguage] = 'failed';
-                
-                // Only try English fallback if not already using it
-                if (ocrLanguage !== DEFAULT_LANGUAGE) {
-                    try {
-                        await worker.loadLanguage(DEFAULT_LANGUAGE);
-                        await worker.initialize(DEFAULT_LANGUAGE);
-                        
-                        const { data } = await worker.recognize(imageBlob);
-                        OCRcompleted = true;
-                        await addScreenshot(timestamp, finalImageUrl, data.text);
-                    } catch (engError) {
-                        console.error('Failed to perform OCR with English fallback:', engError);
-                        languageLoadAttempts[DEFAULT_LANGUAGE] = 'failed';
-                        await addScreenshot(timestamp, finalImageUrl, '');
+                try {
+                    // Validate blob before passing to Tesseract
+                    if (processingBlob.size === 0) {
+                        throw new Error('Empty image blob');
                     }
-                } else {
-                    await addScreenshot(timestamp, finalImageUrl, '');
+                    
+                    await worker.loadLanguage(ocrLanguage);
+                    await worker.initialize(ocrLanguage);
+                    
+                    // Mark language as loaded successfully
+                    languageLoadAttempts[ocrLanguage] = 'loaded';
+                    
+                    // Perform recognition
+                    const { data } = await worker.recognize(processingBlob);
+                    ocrText = data.text;
+                    success = true;
+                } catch (langError) {
+                    console.error(`Failed to load language '${ocrLanguage}':`, langError);
+                    
+                    // If this was a memory error, try with further downscaling
+                    if (langError.message && langError.message.includes('memory') && retryCount < OCR_CONFIG.maxRetries) {
+                        retryCount++;
+                        const newWidth = OCR_CONFIG.maxImageWidth * Math.pow(OCR_CONFIG.rescaleFactor, retryCount);
+                        const newHeight = OCR_CONFIG.maxImageHeight * Math.pow(OCR_CONFIG.rescaleFactor, retryCount);
+                        
+                        console.log(`Retry ${retryCount}: Reducing image to ${newWidth}x${newHeight} for OCR`);
+                        processingBlob = await downscaleImageForOCR(imageBlob, newWidth, newHeight);
+                    } else if (ocrLanguage !== DEFAULT_LANGUAGE) {
+                        // Try fallback to English
+                        try {
+                            await worker.loadLanguage(DEFAULT_LANGUAGE);
+                            await worker.initialize(DEFAULT_LANGUAGE);
+                            
+                            const { data } = await worker.recognize(processingBlob);
+                            ocrText = data.text;
+                            success = true;
+                        } catch (engError) {
+                            console.error('Failed to perform OCR with English fallback:', engError);
+                            languageLoadAttempts[DEFAULT_LANGUAGE] = 'failed';
+                        }
+                    }
+                } finally {
+                    // Always terminate the worker
+                    try {
+                        await worker.terminate();
+                    } catch (e) {
+                        console.warn('Error terminating Tesseract worker:', e);
+                    }
+                }
+            } catch (error) {
+                console.error('Tesseract processing error:', error);
+                retryCount++;
+                
+                // If not a memory error or last retry, break the loop
+                if ((!error.message || !error.message.includes('memory')) && retryCount > OCR_CONFIG.maxRetries) {
+                    break;
+                }
+                
+                // Further reduce image size for next retry
+                if (retryCount <= OCR_CONFIG.maxRetries) {
+                    const newWidth = OCR_CONFIG.maxImageWidth * Math.pow(OCR_CONFIG.rescaleFactor, retryCount);
+                    const newHeight = OCR_CONFIG.maxImageHeight * Math.pow(OCR_CONFIG.rescaleFactor, retryCount);
+                    
+                    if (window.showNotification) {
+                        window.showNotification(`OCR memory issue - retrying with smaller image (${Math.round(newWidth)}x${Math.round(newHeight)})`, 'warning');
+                    }
+                    
+                    try {
+                        processingBlob = await downscaleImageForOCR(imageBlob, newWidth, newHeight);
+                    } catch (e) {
+                        console.error('Failed to downscale on retry:', e);
+                        break;
+                    }
                 }
             }
-        } catch (error) {
-            console.error('Tesseract processing error:', error);
-            await addScreenshot(timestamp, finalImageUrl, '');
-        } finally {
-            // Always ensure we terminate the worker to free resources
-            try {
-                await worker.terminate();
-            } catch (e) {
-                console.warn('Error terminating Tesseract worker:', e);
-            }
-            
-            // If OCR didn't complete, make sure we still save the screenshot
-            if (!OCRcompleted) {
-                await addScreenshot(timestamp, finalImageUrl, '');
-            }
         }
+        
+        // Store the screenshot with whatever OCR text we got (even if empty)
+        await addScreenshot(timestamp, finalImageUrl, ocrText);
+        
+        // Clean up temporary rescaled blob
+        if (processingBlob !== imageBlob) {
+            // Free memory for the scaled-down blob if we created one
+            URL.revokeObjectURL(URL.createObjectURL(processingBlob));
+        }
+        
     } catch (error) {
         console.error('OCR Error:', error);
         await addScreenshot(timestamp, imageUrl || null, '');
