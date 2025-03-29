@@ -122,10 +122,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Add event listeners to handle user interactions for permission requests
     document.addEventListener('click', async () => {
         // Try to restore permissions on any click
-        await requestPermissionOnUserActivation();
+        const permissionsRestored = await requestPermissionOnUserActivation();
         
         // Try to save database if needed
         saveDbOnUserInteraction();
+        
+        // Add UI feedback when permissions are restored
+        if (permissionsRestored) {
+            // Show a temporary notification
+            const notification = document.createElement('div');
+            notification.className = 'fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg';
+            notification.textContent = 'Folder permissions restored!';
+            document.body.appendChild(notification);
+            
+            // Remove after 3 seconds
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                notification.style.transition = 'opacity 0.5s';
+                setTimeout(() => notification.remove(), 500);
+            }, 3000);
+        }
+    });
+
+    // Enhanced focus detection to handle permission restoration automatically
+    document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState === 'visible') {
+            // When tab becomes visible, check for needed permission restoration
+            if (window._pendingPermissionRequest) {
+                await requestPermissionOnUserActivation();
+            }
+        }
     });
 
     // Event listeners
@@ -181,7 +207,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         
         // Explicitly save database now that we have user activation
-        if (dirHandle) {
+        const currentDirHandle = await getDirectoryHandle();
+        if (currentDirHandle) {
             await saveCurrentDatabaseToFolder();
         }
     });
@@ -304,12 +331,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                         loadingIndicator.remove();
                     };
                     
-                    // Handle image loading failure
-                    img.onerror = async (e) => {
-                        console.error("Failed to load image");
+                    // Handle image loading failure - without recursive retry
+                    img.onerror = (e) => {
+                        console.warn("Failed to load image");
                         loadingIndicator.innerHTML = "Image not available";
-                        // Try fallback methods
-                        await loadImageForElement(img, item, true);
+                        
+                        // Set a placeholder image to stop error cascade
+                        img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"%3E%3C/svg%3E';
+                        img.style.backgroundColor = "#333";
+                        
+                        // Prevent further error handling
+                        img.onerror = null;
                     };
                     
                     imgContainer.appendChild(loadingIndicator);
@@ -365,9 +397,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // New helper function to load images
+    // New helper function to load images - with additional error prevention
     async function loadImageForElement(imgElement, item, isFallback = false) {
+        // Guard against multiple loading attempts
+        if (imgElement.dataset.loadAttempted === 'true') {
+            return; // Prevent recursive loading attempts
+        }
+        
         try {
+            // Mark this element as having a loading attempt
+            imgElement.dataset.loadAttempted = 'true';
+            
             if (item.fileHandle) {
                 // Get file directly from the fileHandle
                 const fileData = await getScreenshotFile(item.fileHandle);
@@ -386,11 +426,28 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const fallbackUrl = await getScreenshotFileUrl(item.timestamp);
                     if (fallbackUrl) {
                         imgElement.src = fallbackUrl;
+                    } else {
+                        // If all loading attempts fail, set a placeholder and stop trying
+                        imgElement.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"%3E%3C/svg%3E';
+                        imgElement.alt = "Image unavailable";
+                        imgElement.style.backgroundColor = "#333";
+                        // Remove loading indicator
+                        const container = imgElement.closest('.relative');
+                        if (container) {
+                            const loadingIndicator = container.querySelector('div');
+                            if (loadingIndicator) {
+                                loadingIndicator.textContent = "Image unavailable";
+                            }
+                        }
                     }
                 }
             }
         } catch (e) {
             console.error('Error loading image:', e);
+            // Set a placeholder image to prevent further loading attempts
+            imgElement.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"%3E%3C/svg%3E';
+            imgElement.alt = "Image unavailable";
+            imgElement.style.backgroundColor = "#333";
         }
     }
 
@@ -543,9 +600,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         return text.substring(0, maxLength) + '...';
     }
     
-    // Create a function to add a new screenshot to the UI - fixed section finding
+    // Create a function to add a new screenshot to the UI - fixed to prevent error loops
     async function addNewScreenshotToUI(screenshotInfo) {
         if (!screenshotInfo) return;
+        
+        // Prevent duplicate additions - check if this screenshot is already in the UI
+        if (document.querySelector(`p[data-timestamp="${screenshotInfo.timestamp}"]`)) {
+            // Screenshot already exists in UI, don't add it again
+            return;
+        }
         
         try {
             // Get the current date from the screenshot timestamp
@@ -572,9 +635,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 loadingIndicator.remove();
             };
             
-            img.onerror = async (e) => {
-                console.error("Failed to load new image");
+            // Handle image loading failure without recursively retrying
+            img.onerror = (e) => {
+                console.warn(`Failed to load new image: ${screenshotInfo.timestamp}`);
                 loadingIndicator.innerHTML = "Image not available";
+                
+                // Set a placeholder image to stop error cascade
+                img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"%3E%3C/svg%3E';
+                img.style.backgroundColor = "#333";
+                
+                // Prevent further error handling
+                img.onerror = null;
             };
             
             imgContainer.appendChild(loadingIndicator);

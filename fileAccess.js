@@ -66,14 +66,27 @@ async function selectFolder() {
 async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
     if (!directoryHandle) {
         console.warn('No directory selected.');
-        return;
+        return null;
     }
 
-    // Verify we have write permission
+    // Verify we have write permission without requesting it automatically
     if (await verifyPermission(directoryHandle, true) === false) {
-        console.warn('Permission to write to folder was lost. Screenshot save skipped.');
+        console.warn('Permission to write to folder was lost. Screenshot queued for later.');
+        
+        // Queue the screenshot for when permissions are restored
+        if (!window._pendingScreenshots) {
+            window._pendingScreenshots = [];
+        }
+        
+        // Queue with the data needed to save later
+        window._pendingScreenshots.push({
+            pngBlob: pngBlob.slice(0),  // Clone the blobs to preserve them
+            jpgBlob: jpgBlob.slice(0),
+            timestamp
+        });
+        
         window._pendingPermissionRequest = true;
-        return;
+        return null;
     }
 
     try {
@@ -403,31 +416,78 @@ async function verifyPermission(fileHandle, writeAccess) {
         const opts = { mode: writeAccess ? 'readwrite' : 'read' };
         
         // Try a permission check without prompting
-        if ((await fileHandle.queryPermission(opts)) === 'granted') {
+        const state = await fileHandle.queryPermission(opts);
+        if (state === 'granted') {
             return true;
         }
         
-        // Request permission explicitly, but this will fail if not triggered by user activation
-        if ((await fileHandle.requestPermission(opts)) === 'granted') {
-            return true;
+        // If we're in a background context, don't try to request permission
+        // as it will cause a SecurityError - instead return false
+        if (document.visibilityState === 'hidden' || !isUserActivationValid()) {
+            // Set flag to request on next user interaction
+            window._pendingPermissionRequest = true;
+            return false;
         }
         
-        return false;
+        // Only try to request permission if we have user activation
+        // This should be called during a user gesture (click, etc)
+        const requestResult = await fileHandle.requestPermission(opts);
+        return requestResult === 'granted';
     } catch (e) {
+        if (e.name === 'SecurityError') {
+            // We're not in a user gesture context, just mark for later
+            window._pendingPermissionRequest = true;
+            return false;
+        }
         console.warn('Permission verification error:', e);
         return false;
     }
 }
 
-// Add a function to attempt a permission request - this should be called during user interaction
+// Helper to check if we have valid user activation
+function isUserActivationValid() {
+    // Not all browsers support this API, so check first
+    if ('userActivation' in navigator) {
+        return navigator.userActivation.isActive;
+    }
+    
+    // Fallback to just reporting true since we can't detect
+    // We'll catch the SecurityError if it happens
+    return true;
+}
+
+// Enhanced version to handle pending screenshots during permission recovery
 async function requestPermissionOnUserActivation() {
-    if (!directoryHandle || !window._pendingPermissionRequest) return false;
+    if (!directoryHandle) return false;
     
     try {
-        const result = await verifyPermission(directoryHandle, true);
-        if (result) {
-            window._pendingPermissionRequest = false;
-            return true;
+        if (window._pendingPermissionRequest) {
+            const result = await verifyPermission(directoryHandle, true);
+            if (result) {
+                console.log('Permission successfully restored on user interaction');
+                window._pendingPermissionRequest = false;
+                
+                // Process any pending screenshots that were queued during permission outage
+                if (window._pendingScreenshots && window._pendingScreenshots.length > 0) {
+                    console.log(`Processing ${window._pendingScreenshots.length} pending screenshots`);
+                    
+                    // Take only the last few screenshots to avoid flooding
+                    const recentScreenshots = window._pendingScreenshots.slice(-5);
+                    
+                    for (const item of recentScreenshots) {
+                        try {
+                            await saveScreenshot(item.pngBlob, item.jpgBlob, item.timestamp);
+                        } catch (e) {
+                            console.error('Error saving queued screenshot:', e);
+                        }
+                    }
+                    
+                    // Clear the pending queue
+                    window._pendingScreenshots = [];
+                }
+                
+                return true;
+            }
         }
     } catch (e) {
         console.error('Error requesting permission on user activation:', e);

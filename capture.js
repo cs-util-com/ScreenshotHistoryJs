@@ -92,12 +92,15 @@ async function startCapture() {
                 // Pass the ISO timestamp to saveScreenshot which will format it for filenames
                 const savedScreenshot = await saveScreenshot(pngBlob, jpgBlob, dbTimestamp);
                 
-                // Update the UI with the new screenshot
-                if (savedScreenshot && typeof updateUIWithNewScreenshot === 'function') {
-                    updateUIWithNewScreenshot(savedScreenshot);
-                } else if (savedScreenshot && window.updateUIWithNewScreenshot) {
-                    // Fallback to using window global if module import fails
-                    window.updateUIWithNewScreenshot(savedScreenshot);
+                // Only update UI if screenshot was successfully saved
+                if (savedScreenshot) {
+                    // Update the UI with the new screenshot
+                    if (typeof updateUIWithNewScreenshot === 'function') {
+                        updateUIWithNewScreenshot(savedScreenshot);
+                    } else if (window.updateUIWithNewScreenshot) {
+                        // Fallback to using window global if module import fails
+                        window.updateUIWithNewScreenshot(savedScreenshot);
+                    }
                 }
 
             } catch (error) {
