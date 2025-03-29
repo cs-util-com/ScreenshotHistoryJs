@@ -406,18 +406,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         displayDailyGroups(results);
         window._refreshState.itemCount = results.length;
-        
-        // Show search result count
-        if (searchTerm) {
-            // Remove existing search feedback to avoid duplication
-            const oldFeedback = document.querySelector('.search-result-count');
-            if (oldFeedback) oldFeedback.remove();
-            
-            const searchResultCount = document.createElement('div');
-            searchResultCount.className = 'search-result-count text-sm text-gray-500 mb-4';
-            searchResultCount.textContent = `Found ${results.length} results for "${searchTerm}"`;
-            dailyGroups.insertAdjacentElement('beforebegin', searchResultCount);
-        }
     });
 
     // Settings Modal event listeners
@@ -466,7 +454,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         dailyGroups.innerHTML = '';
         
         // Remove any existing search count indicators
-        const existingSearchCount = document.querySelector('.search-count-indicator');
+        const existingSearchCount = document.querySelector('.search-result-count');
         if (existingSearchCount) {
             existingSearchCount.remove();
         }
@@ -474,6 +462,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!items || items.length === 0) {
             dailyGroups.innerHTML = '<div class="text-center py-10 text-gray-500">No items to display. Start capturing to see screenshots here.</div>';
             return;
+        }
+        
+        // Get the current search term from the search input directly
+        // This ensures we use the complete, non-truncated value
+        const searchTerm = document.getElementById('search').value.trim();
+        
+        // Add search result count if there's a search term
+        if (searchTerm) {
+            const searchResultCount = document.createElement('div');
+            searchResultCount.className = 'search-result-count text-sm text-gray-500 mb-4';
+            searchResultCount.textContent = `Found ${items.length} results for "${searchTerm}"`;
+            dailyGroups.insertAdjacentElement('beforebegin', searchResultCount);
         }
         
         // Filter out items without valid timestamps before grouping
