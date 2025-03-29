@@ -6,14 +6,19 @@ import {
     selectFolder,
     getFolderPath,
     restoreDirectoryHandle,
-    getDirectoryHandle
+    getDirectoryHandle,
+    getScreenshotFile,
+    getScreenshotFileUrl,
+    requestPermissionOnUserActivation
 } from './fileAccess.js';
 import {
     initDB,
     addScreenshot,
     searchScreenshots,
     exportDBToJson,
-    saveCurrentDatabaseToFolder
+    saveCurrentDatabaseToFolder,
+    getScreenshotsFromFolder,
+    saveDbOnUserInteraction
 } from './storage.js';
 import {
     performOCR
@@ -111,12 +116,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    // Add event listeners to handle user interactions for permission requests
+    document.addEventListener('click', async () => {
+        // Try to restore permissions on any click
+        await requestPermissionOnUserActivation();
+        
+        // Try to save database if needed
+        saveDbOnUserInteraction();
+    });
+
     // Event listeners
-    startCaptureButton.addEventListener('click', () => {
+    startCaptureButton.addEventListener('click', async () => {
+        // Ensure we have permissions before starting
+        await requestPermissionOnUserActivation();
+        
         startCapture();
         startCaptureButton.classList.add('hidden');
         pauseCaptureButton.classList.remove('hidden');
         localStorage.setItem('capturingActive', 'true');
+        
+        // Save database while we have user activation
+        saveDbOnUserInteraction();
     });
 
     pauseCaptureButton.addEventListener('click', () => {
@@ -124,6 +144,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         pauseCaptureButton.classList.add('hidden');
         startCaptureButton.classList.remove('hidden');
         localStorage.setItem('capturingActive', 'false');
+        
+        // Save database while we have user activation
+        saveDbOnUserInteraction();
     });
 
     selectFolderButton.addEventListener('click', async () => {
@@ -136,15 +159,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Initialize database for the new folder
             await initDB();
             
-            // Load screenshots for the current folder
+            // Load screenshots directly from the folder
             const allItems = await searchScreenshots('');
             displayDailyGroups(allItems);
             
-            // Export the database to the folder
+            // Save database to the folder for future reference
             const dirHandle = await getDirectoryHandle();
             if (dirHandle) {
                 await saveCurrentDatabaseToFolder();
-                await exportDBToJson(dirHandle);
             }
 
             startCaptureButton.classList.remove('hidden');
@@ -153,6 +175,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 startCaptureButton.classList.add('hidden');
                 pauseCaptureButton.classList.remove('hidden');
             }
+        }
+        
+        // Explicitly save database now that we have user activation
+        if (dirHandle) {
+            await saveCurrentDatabaseToFolder();
         }
     });
 
@@ -247,13 +274,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                 gridItem.className = 'rounded overflow-hidden shadow-lg bg-gray-800';
                 
                 // Check if this is a screenshot or a summary
-                if (item.url) {
+                if (item.fileHandle || item.url) {
                     // It's a screenshot
                     const imgContainer = document.createElement('div');
                     imgContainer.className = 'h-40 relative bg-gray-700 flex items-center justify-center';
                     
                     const img = document.createElement('img');
-                    img.src = item.url;
+                    if (item.url) {
+                        img.src = item.url;
+                    } else {
+                        // If we don't have a URL yet, try to get one
+                        img.dataset.timestamp = item.timestamp;
+                        img.dataset.filename = item.filename;
+                        loadImageForElement(img, item);
+                    }
                     img.alt = item.ocrText || 'Screenshot';
                     img.className = 'w-full h-32 object-cover';
                     
@@ -265,23 +299,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // Handle successful image loading
                     img.onload = () => {
                         loadingIndicator.remove();
-                        console.log("Image loaded successfully:", item.url);
                     };
                     
                     // Handle image loading failure
                     img.onerror = async (e) => {
                         console.error("Failed to load image:", item.url, e);
                         loadingIndicator.innerHTML = "Image not available";
-                        if (window._savedBlobs && window._savedBlobs[item.timestamp]) {
-                            const newUrl = URL.createObjectURL(window._savedBlobs[item.timestamp]);
-                            img.src = newUrl;
-                        } else {
-                            const fallbackUrl = await getScreenshotFileUrl(item.timestamp);
-                            if (fallbackUrl) {
-                                console.log("Fallback file URL found:", fallbackUrl);
-                                img.src = fallbackUrl;
-                            }
-                        }
+                        // Try fallback methods
+                        await loadImageForElement(img, item, true);
                     };
                     
                     imgContainer.appendChild(loadingIndicator);
@@ -334,6 +359,35 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             dateSection.appendChild(grid);
             dailyGroups.appendChild(dateSection);
+        }
+    }
+
+    // New helper function to load images
+    async function loadImageForElement(imgElement, item, isFallback = false) {
+        try {
+            if (item.fileHandle) {
+                // Get file directly from the fileHandle
+                const fileData = await getScreenshotFile(item.fileHandle);
+                if (fileData && fileData.url) {
+                    imgElement.src = fileData.url;
+                    return;
+                }
+            }
+            
+            if (isFallback) {
+                // Try additional fallback methods
+                if (window._savedBlobs && window._savedBlobs[item.timestamp]) {
+                    const newUrl = URL.createObjectURL(window._savedBlobs[item.timestamp]);
+                    imgElement.src = newUrl;
+                } else {
+                    const fallbackUrl = await getScreenshotFileUrl(item.timestamp);
+                    if (fallbackUrl) {
+                        imgElement.src = fallbackUrl;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Error loading image:', e);
         }
     }
 
@@ -450,10 +504,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         return text.substring(0, maxLength) + '...';
     }
 
-    // Implement infinite scroll
+    // Implement infinite scroll with folder-based approach
     let pageSize = 20;
     let currentPage = 1;
     let loading = false;
+    let allFolderItems = [];
     
     window.addEventListener('scroll', async () => {
         if (loading) return;
@@ -464,11 +519,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             loading = true;
             currentPage++;
             
-            const moreItems = await db.screenshots
-                .offset(currentPage * pageSize)
-                .limit(pageSize)
-                .toArray();
-                
+            // If we haven't loaded all items yet, scan folder for more
+            if (allFolderItems.length === 0) {
+                allFolderItems = await getScreenshotsFromFolder();
+            }
+            
+            // Calculate the slice for this page
+            const startIndex = pageSize * currentPage;
+            const endIndex = startIndex + pageSize;
+            const moreItems = allFolderItems.slice(startIndex, endIndex);
+            
             if (moreItems.length > 0) {
                 const currentItems = await searchScreenshots('');
                 displayDailyGroups([...currentItems, ...moreItems]);

@@ -69,6 +69,13 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
         return;
     }
 
+    // Verify we have write permission
+    if (await verifyPermission(directoryHandle, true) === false) {
+        console.warn('Permission to write to folder was lost. Screenshot save skipped.');
+        window._pendingPermissionRequest = true;
+        return;
+    }
+
     try {
         // Format timestamp for more readable filenames (YYYY-MM-DD-HH-MM-SS)
         // Make sure we don't have any invalid characters like colons or dots in the filename
@@ -150,7 +157,12 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
 
     } catch (error) {
         console.error('Error saving screenshot:', error);
-        console.error('Timestamp that caused error:', timestamp);
+        
+        // Handle permission errors specifically
+        if (error.name === 'SecurityError') {
+            window._pendingPermissionRequest = true;
+            console.warn('Permission denied when saving. Will try to restore permissions on next user interaction.');
+        }
     }
 }
 
@@ -248,21 +260,100 @@ async function getFolderIdentifier() {
     }
 }
 
+/**
+ * Scans the selected folder for screenshot files
+ * This allows us to display images that exist in the folder even if they're not in the database
+ */
+async function scanFolderForScreenshots() {
+    if (!directoryHandle) return [];
+    
+    try {
+        const screenshots = [];
+        
+        // Iterate through all files in the directory
+        for await (const entry of directoryHandle.values()) {
+            // Skip non-file entries and non-image files
+            if (entry.kind !== 'file') continue;
+            
+            const filename = entry.name;
+            // Check if this is a screenshot file (based on our naming convention)
+            if (filename.startsWith('screenshot_') && (filename.endsWith('.png') || filename.endsWith('.jpg'))) {
+                try {
+                    // Extract timestamp from filename
+                    const timestampPart = filename.replace('screenshot_', '').replace('.png', '').replace('.jpg', '');
+                    // Convert back to ISO format timestamp for consistency
+                    const isoTimestamp = timestampPart
+                        .replace('_', 'T')
+                        .replace(/-/g, (match, offset) => {
+                            // Replace the first 3 dashes to restore ISO format, but keep others as is
+                            return offset < 10 ? ':' : match;
+                        }) + 'Z';
+                    
+                    screenshots.push({
+                        filename,
+                        timestamp: isoTimestamp,
+                        fileHandle: entry
+                    });
+                } catch (e) {
+                    console.warn(`Could not process filename: ${filename}`, e);
+                }
+            }
+        }
+        
+        // Sort by timestamp (newest first)
+        screenshots.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+        
+        console.log(`Found ${screenshots.length} screenshots in folder`);
+        return screenshots;
+    } catch (e) {
+        console.error('Error scanning folder for screenshots:', e);
+        return [];
+    }
+}
+
+async function getScreenshotFile(fileHandle) {
+    try {
+        const file = await fileHandle.getFile();
+        const url = URL.createObjectURL(file);
+        return { url, file };
+    } catch (e) {
+        console.error('Error getting screenshot file:', e);
+        return null;
+    }
+}
+
 async function saveDatabaseToFolder(dbJson) {
     if (!directoryHandle) return false;
     
     try {
+        // Check if we still have permission
+        if (await verifyPermission(directoryHandle, true) === false) {
+            console.warn('Permission to write to folder was lost. Database save skipped.');
+            return false;
+        }
+        
         const filename = 'screenshot-history-db.json';
-        const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
-        const writable = await fileHandle.createWritable();
-        
-        // Convert to blob and write
-        const blob = new Blob([JSON.stringify(dbJson, null, 2)], { type: 'application/json' });
-        await writable.write(blob);
-        await writable.close();
-        
-        console.log('Database saved to folder successfully');
-        return true;
+        try {
+            const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
+            const writable = await fileHandle.createWritable();
+            
+            // Convert to blob and write
+            const blob = new Blob([JSON.stringify(dbJson, null, 2)], { type: 'application/json' });
+            await writable.write(blob);
+            await writable.close();
+            
+            console.log('Database saved to folder successfully');
+            return true;
+        } catch (e) {
+            if (e.name === 'SecurityError') {
+                console.warn('Permission denied when saving database. Will try again on next user interaction.');
+                // Set a flag to retry on next user interaction
+                window._needsDatabaseSave = true;
+                return false;
+            } else {
+                throw e;
+            }
+        }
     } catch (e) {
         console.error('Error saving database to folder:', e);
         return false;
@@ -300,6 +391,46 @@ async function tryImportDatabaseFromFolder() {
     return false;
 }
 
+// Check if we have permission to the given directory handle
+async function verifyPermission(fileHandle, writeAccess) {
+    try {
+        // Check if permission was already granted
+        const opts = { mode: writeAccess ? 'readwrite' : 'read' };
+        
+        // Try a permission check without prompting
+        if ((await fileHandle.queryPermission(opts)) === 'granted') {
+            return true;
+        }
+        
+        // Request permission explicitly, but this will fail if not triggered by user activation
+        if ((await fileHandle.requestPermission(opts)) === 'granted') {
+            return true;
+        }
+        
+        return false;
+    } catch (e) {
+        console.warn('Permission verification error:', e);
+        return false;
+    }
+}
+
+// Add a function to attempt a permission request - this should be called during user interaction
+async function requestPermissionOnUserActivation() {
+    if (!directoryHandle || !window._pendingPermissionRequest) return false;
+    
+    try {
+        const result = await verifyPermission(directoryHandle, true);
+        if (result) {
+            window._pendingPermissionRequest = false;
+            console.log('Permission successfully restored on user interaction');
+            return true;
+        }
+    } catch (e) {
+        console.error('Error requesting permission on user activation:', e);
+    }
+    return false;
+}
+
 export {
     selectFolder,
     saveScreenshot,
@@ -309,5 +440,9 @@ export {
     getScreenshotFileUrl,
     getFolderIdentifier,
     saveDatabaseToFolder,
-    loadDatabaseFromFolder
+    loadDatabaseFromFolder,
+    scanFolderForScreenshots,
+    getScreenshotFile,
+    verifyPermission,
+    requestPermissionOnUserActivation
 };

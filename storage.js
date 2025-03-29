@@ -1,4 +1,5 @@
-import { selectFolder, getDirectoryHandle, saveDatabaseToFolder, loadDatabaseFromFolder } from './fileAccess.js';
+import { selectFolder, getDirectoryHandle, saveDatabaseToFolder, loadDatabaseFromFolder, scanFolderForScreenshots, getScreenshotFile, verifyPermission } from './fileAccess.js';
+import { performOCR } from './ocr.js';
 
 let db;
 let exportIntervalId;
@@ -118,7 +119,23 @@ async function exportToJson() {
 async function saveCurrentDatabaseToFolder() {
     const jsonData = await exportToJson();
     if (jsonData) {
-        return await saveDatabaseToFolder(jsonData);
+        // Check if we have permission before attempting to save
+        const dirHandle = await getDirectoryHandle();
+        if (dirHandle) {
+            try {
+                const hasPermission = await verifyPermission(dirHandle, true);
+                if (hasPermission) {
+                    return await saveDatabaseToFolder(jsonData);
+                } else {
+                    console.warn('No permission to save database, will try later');
+                    window._needsDatabaseSave = jsonData;
+                    return false;
+                }
+            } catch (e) {
+                console.error('Error checking permissions:', e);
+                return false;
+            }
+        }
     }
     return false;
 }
@@ -132,8 +149,8 @@ async function addScreenshot(timestamp, url, ocrText) {
         });
         console.log('Screenshot added to DB:', timestamp);
         
-        // Autosave database to folder after adding new data
-        setTimeout(saveCurrentDatabaseToFolder, 5000);
+        // Instead of auto-saving immediately via setTimeout, mark for saving on next user interaction
+        window._needsDatabaseSave = true;
     } catch (error) {
         console.error('Error adding screenshot to DB:', error);
     }
@@ -160,39 +177,88 @@ async function addSummary(startTime, endTime, text) {
     }
 }
 
+// New function to get screenshots directly from the folder with OCR data if available
+async function getScreenshotsFromFolder(searchTerm = '') {
+    try {
+        // First scan the folder for all screenshots
+        const folderScreenshots = await scanFolderForScreenshots();
+        
+        // Initialize an array to store the results with OCR data
+        const results = [];
+        
+        // Process each screenshot from the folder
+        for (const screenshot of folderScreenshots) {
+            // Try to find OCR data in the database
+            const dbEntry = await db.screenshots.get(screenshot.timestamp);
+            
+            // Create a result object for this screenshot
+            const result = {
+                ...screenshot,
+                timestamp: screenshot.timestamp,
+                ocrText: dbEntry ? dbEntry.ocrText : '',
+                url: null // Will be set below
+            };
+            
+            // If there's a search term and we have OCR data, check if it matches
+            if (searchTerm && result.ocrText) {
+                if (!result.ocrText.toLowerCase().includes(searchTerm.toLowerCase())) {
+                    continue; // Skip this screenshot if it doesn't match the search term
+                }
+            }
+            
+            // Get the actual file and create a URL
+            const fileData = await getScreenshotFile(screenshot.fileHandle);
+            if (fileData) {
+                result.url = fileData.url;
+                
+                // If we don't have OCR data for this screenshot, perform OCR in the background
+                if (!dbEntry || !dbEntry.ocrText) {
+                    console.log(`No OCR data found for ${screenshot.filename}, running OCR...`);
+                    // Use a setTimeout to avoid blocking the UI while processing many files
+                    setTimeout(async () => {
+                        try {
+                            await performOCR(fileData.file, screenshot.timestamp, fileData.url);
+                        } catch (e) {
+                            console.error('Error performing background OCR:', e);
+                        }
+                    }, 0);
+                }
+            }
+            
+            results.push(result);
+        }
+        
+        return results;
+    } catch (error) {
+        console.error('Error getting screenshots from folder:', error);
+        return [];
+    }
+}
+
+// Modified search function to combine folder files with database summaries
 async function searchScreenshots(searchTerm) {
     try {
+        // Get screenshots from folder that match the search term
+        const screenshots = await getScreenshotsFromFolder(searchTerm);
+        
+        // Get summaries from the database that match the search term
+        let summaries = [];
         if (!searchTerm) {
-            // Return all screenshots and summaries, sorted by timestamp
-            const screenshots = await db.screenshots.toArray();
-            const summaries = await db.summaries.toArray();
-            
-            // Combine and sort by timestamp
-            const combined = [...screenshots, ...summaries].sort((a, b) => {
-                const timeA = a.timestamp || a.endTime;
-                const timeB = b.timestamp || b.endTime;
-                return timeB.localeCompare(timeA); // Descending order (newest first)
-            });
-            
-            return combined;
+            // Get all summaries if no search term
+            summaries = await db.summaries.toArray();
         } else {
-            // Search screenshots by OCR text
-            const screenshots = await db.screenshots
-                .filter(item => item.ocrText && item.ocrText.toLowerCase().includes(searchTerm.toLowerCase()))
-                .toArray();
-                
-            // Search summaries by text
-            const summaries = await db.summaries
+            // Filter summaries by search term
+            summaries = await db.summaries
                 .filter(item => item.text && item.text.toLowerCase().includes(searchTerm.toLowerCase()))
                 .toArray();
-                
-            // Combine and sort
-            return [...screenshots, ...summaries].sort((a, b) => {
-                const timeA = a.timestamp || a.endTime;
-                const timeB = b.timestamp || b.endTime;
-                return timeB.localeCompare(timeA);
-            });
         }
+        
+        // Combine and sort
+        return [...screenshots, ...summaries].sort((a, b) => {
+            const timeA = a.timestamp || a.endTime;
+            const timeB = b.timestamp || b.endTime;
+            return timeB.localeCompare(timeA); // Descending order (newest first)
+        });
     } catch (error) {
         console.error('Error searching data:', error);
         return [];
@@ -270,6 +336,15 @@ async function exportDBToJson(directoryHandle) {
     }
 }
 
+// Handle database saving during user interactions
+function saveDbOnUserInteraction() {
+    if (window._needsDatabaseSave) {
+        console.log('Attempting to save database on user interaction');
+        saveCurrentDatabaseToFolder();
+        window._needsDatabaseSave = false;
+    }
+}
+
 function scheduleDailyExport() {
     // Export every 5 minutes as specified in the requirements
     const EXPORT_INTERVAL = 5 * 60 * 1000; // 5 minutes
@@ -283,11 +358,17 @@ function scheduleDailyExport() {
         // Get the directory handle and export
         const dirHandle = await getDirectoryHandle();
         if (dirHandle) {
-            // Save main database file to the folder
-            await saveCurrentDatabaseToFolder();
-            
-            // Also save the daily export as required in specs
-            await exportDBToJson(dirHandle);
+            const hasPermission = await verifyPermission(dirHandle, true);
+            if (hasPermission) {
+                // Save main database file to the folder
+                await saveCurrentDatabaseToFolder();
+                
+                // Also save the daily export as required in specs
+                await exportDBToJson(dirHandle);
+            } else {
+                console.log('No permission for auto-export, will try on next user interaction');
+                window._needsDatabaseSave = true;
+            }
         } else {
             console.log('No directory handle available for auto-export');
         }
@@ -305,5 +386,7 @@ export {
     exportDBToJson,
     resetDatabase,
     saveCurrentDatabaseToFolder,
-    importFromJson
+    importFromJson,
+    getScreenshotsFromFolder,
+    saveDbOnUserInteraction
 };

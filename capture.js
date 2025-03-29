@@ -12,17 +12,47 @@ import {
 
 async function startCapture() {
     if (capturing) return;
-    capturing = true;
 
     try {
+        // Stop any existing media stream
+        stopCapture();
+
+        capturing = true;
+
+        // Request screen sharing
         mediaStream = await navigator.mediaDevices.getDisplayMedia({
             video: true
         });
+
+        // Add track ended listener to restart if user stops sharing
+        mediaStream.getVideoTracks().forEach(track => {
+            track.addEventListener('ended', () => {
+                console.log('Screen sharing ended by user');
+                stopCapture();
+
+                // If we still want to be capturing, automatically prompt user to restart
+                if (localStorage.getItem('capturingActive') === 'true') {
+                    setTimeout(() => {
+                        startCapture();
+                    }, 1000);
+                }
+            });
+        });
+
         const track = mediaStream.getVideoTracks()[0];
         const imageCapture = new ImageCapture(track);
 
+        // Create a robust capture interval
         intervalId = setInterval(async () => {
             try {
+                // Check if track is still active
+                if (!track.readyState || track.readyState === 'ended') {
+                    console.log('Track is no longer active, restarting capture');
+                    stopCapture();
+                    startCapture();
+                    return;
+                }
+
                 const bitmap = await imageCapture.grabFrame();
                 const canvas = document.createElement('canvas');
                 canvas.width = bitmap.width;
@@ -42,7 +72,7 @@ async function startCapture() {
 
                 // Generate a clean timestamp for database storage (ISO format)
                 const dbTimestamp = new Date().toISOString();
-                
+
                 const imageQuality = localStorage.getItem('imageQuality') || 80;
                 const pngBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
                 const jpgBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', imageQuality / 100));
@@ -52,13 +82,28 @@ async function startCapture() {
 
             } catch (error) {
                 console.error('Error capturing screenshot:', error);
-                stopCapture();
+
+                // Handle specific track errors by restarting
+                if (error.name === 'InvalidStateError' ||
+                    error.message.includes('Track') ||
+                    error.message.includes('track')) {
+                    console.log('Track error detected, restarting capture');
+                    stopCapture();
+
+                    // Try to restart after a short delay
+                    setTimeout(() => {
+                        if (localStorage.getItem('capturingActive') === 'true') {
+                            startCapture();
+                        }
+                    }, 2000);
+                }
             }
         }, 5000); // Every 5 seconds
 
     } catch (error) {
         console.error('Error starting screen capture:', error);
         capturing = false;
+        localStorage.setItem('capturingActive', 'false');
     }
 }
 

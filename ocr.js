@@ -5,8 +5,19 @@ import {
 // Cache for language loading status to avoid repeated errors
 const languageLoadAttempts = {};
 
-async function performOCR(imageBlob, timestamp, imageUrl) {
+async function performOCR(imageSource, timestamp, imageUrl) {
     try {
+        // Handle different input types (File object or Blob)
+        let imageBlob;
+        if (imageSource instanceof Blob) {
+            imageBlob = imageSource;
+        } else if (imageSource instanceof File) {
+            imageBlob = imageSource;
+        } else {
+            console.error('Invalid image source type:', typeof imageSource);
+            return;
+        }
+        
         // Ensure we have a valid imageUrl
         const finalImageUrl = imageUrl || URL.createObjectURL(imageBlob);
         
@@ -97,7 +108,7 @@ async function performOCR(imageBlob, timestamp, imageUrl) {
     } catch (error) {
         console.error('OCR Error:', error);
         // Even if OCR fails, store the screenshot with empty text
-        await addScreenshot(timestamp, finalImageUrl, '');
+        await addScreenshot(timestamp, imageUrl || null, '');
     }
 }
 
