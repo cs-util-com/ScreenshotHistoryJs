@@ -222,6 +222,10 @@ async function getDirectoryHandle() {
 const fileLoadAttempts = new Map();
 
 async function getScreenshotFile(fileHandle) {
+    if (!fileHandle) {
+        return null;
+    }
+    
     // Check if we've already failed to load this file
     const filePath = fileHandle.name;
     if (fileLoadAttempts.has(filePath) && fileLoadAttempts.get(filePath) === 'failed') {
@@ -230,6 +234,13 @@ async function getScreenshotFile(fileHandle) {
     
     try {
         const file = await fileHandle.getFile();
+        // Verify the file isn't empty or corrupted
+        if (file.size === 0) {
+            console.warn(`File ${filePath} is empty`);
+            fileLoadAttempts.set(filePath, 'failed');
+            return null;
+        }
+        
         const url = URL.createObjectURL(file);
         fileLoadAttempts.set(filePath, 'success');
         return { url, file };
@@ -337,6 +348,7 @@ async function scanFolderForScreenshots() {
     
     try {
         const screenshots = [];
+        const processedFiles = new Set(); // Prevent duplicate processing
         
         // Iterate through all files in the directory
         for await (const entry of directoryHandle.values()) {
@@ -344,6 +356,10 @@ async function scanFolderForScreenshots() {
             if (entry.kind !== 'file') continue;
             
             const filename = entry.name;
+            // Skip already processed files
+            if (processedFiles.has(filename)) continue;
+            processedFiles.add(filename);
+            
             // Check if this is a screenshot file (based on our naming convention)
             if (filename.startsWith('screenshot_') && (filename.endsWith('.png') || filename.endsWith('.jpg'))) {
                 try {
@@ -397,6 +413,19 @@ async function scanFolderForScreenshots() {
                         isoTimestamp = file.lastModified ? 
                             new Date(file.lastModified).toISOString() : 
                             new Date().toISOString();
+                    }
+                    
+                    // Verify the file is a valid image file
+                    try {
+                        const file = await entry.getFile();
+                        // Skip empty files
+                        if (file.size === 0) {
+                            console.warn(`Skipping empty file: ${filename}`);
+                            continue;
+                        }
+                    } catch (fileError) {
+                        console.warn(`Couldn't access file ${filename}:`, fileError);
+                        continue;
                     }
                     
                     screenshots.push({
