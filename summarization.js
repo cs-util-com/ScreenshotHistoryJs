@@ -1,9 +1,29 @@
 import { addSummary } from './storage.js';
 
+// Centralized constants for model configuration
+const MODEL_CONFIG = {
+    openai: {
+        modelName: "gpt-3.5-turbo",
+        maxTokens: 500
+    },
+    gemini: {
+        model: "gemini-1.5-flash",
+        maxOutputTokens: 500
+    },
+    claude: {
+        model: "claude-3-sonnet-20240229",
+        maxTokens: 500
+    },
+    local: {
+        model: "llama3",
+        maxTokens: 500
+    }
+};
+
 async function generateSummary(ocrText, timestamps) {
     if (!ocrText || !timestamps || timestamps.length === 0) {
         console.warn('No text or timestamps provided for summarization');
-        return;
+        return null;
     }
     
     console.log(`Generating summary for ${timestamps.length} screenshots`);
@@ -18,24 +38,16 @@ async function generateSummary(ocrText, timestamps) {
         // Create a prompt that includes timestamps context
         const prompt = `Please summarize the following OCR text extracted from my screen between ${timeRange}:\n\n${ocrText}`;
         
-        // Get summary based on selected provider
-        let summary;
-        switch (modelProvider) {
-            case 'openai':
-                summary = await useOpenAI(prompt);
-                break;
-            case 'gemini':
-                summary = await useGemini(prompt);
-                break;
-            case 'claude':
-                summary = await useClaude(prompt);
-                break;
-            case 'local':
-                summary = await useLocalModel(prompt);
-                break;
-            default:
-                summary = await useOpenAI(prompt);
-        }
+        // Select the appropriate model function based on the provider
+        const modelFunctions = {
+            openai: useOpenAI,
+            gemini: useGemini,
+            claude: useClaude,
+            local: useLocalModel
+        };
+        
+        const summaryFunction = modelFunctions[modelProvider] || useOpenAI;
+        const summary = await summaryFunction(prompt);
         
         if (summary) {
             // Store the summary in the database
@@ -52,9 +64,9 @@ async function generateSummary(ocrText, timestamps) {
     return null;
 }
 
+// Model-specific functions 
 async function useOpenAI(prompt) {
     try {
-        // Direct imports from CDN with specific versions
         const {
             ChatOpenAI
         } = await import("https://cdn.jsdelivr.net/npm/@langchain/openai@0.0.14/+esm");
@@ -64,7 +76,6 @@ async function useOpenAI(prompt) {
         } = await import("https://cdn.jsdelivr.net/npm/@langchain/core@0.1.17/messages/+esm");
 
         const apiKey = localStorage.getItem('openaiApiKey');
-
         if (!apiKey) {
             console.warn('OpenAI API key not found. Please enter it in the settings.');
             return null;
@@ -72,8 +83,8 @@ async function useOpenAI(prompt) {
 
         const model = new ChatOpenAI({
             openAIApiKey: apiKey,
-            modelName: "gpt-3.5-turbo",
-            maxTokens: 500,
+            modelName: MODEL_CONFIG.openai.modelName,
+            maxTokens: MODEL_CONFIG.openai.maxTokens,
         });
 
         const systemMessage = new SystemMessage(
@@ -92,13 +103,11 @@ async function useOpenAI(prompt) {
 
 async function useGemini(prompt) {
     try {
-        // Direct imports from CDN with specific versions
         const {
             ChatGoogleGenerativeAI
         } = await import("https://cdn.jsdelivr.net/npm/@langchain/google-genai@0.0.4/+esm");
 
         const apiKey = localStorage.getItem('geminiApiKey');
-
         if (!apiKey) {
             console.warn('Google Gemini API key not found. Please enter it in the settings.');
             return null;
@@ -106,8 +115,8 @@ async function useGemini(prompt) {
 
         const model = new ChatGoogleGenerativeAI({
             apiKey: apiKey,
-            model: "gemini-1.5-flash",
-            maxOutputTokens: 500,
+            model: MODEL_CONFIG.gemini.model,
+            maxOutputTokens: MODEL_CONFIG.gemini.maxOutputTokens,
         });
 
         const response = await model.invoke([
@@ -124,13 +133,11 @@ async function useGemini(prompt) {
 
 async function useClaude(prompt) {
     try {
-        // Direct imports from CDN with specific versions
         const {
             ChatAnthropic
         } = await import("https://cdn.jsdelivr.net/npm/@langchain/anthropic@0.0.3/+esm");
 
         const apiKey = localStorage.getItem('claudeApiKey');
-
         if (!apiKey) {
             console.warn('Anthropic Claude API key not found. Please enter it in the settings.');
             return null;
@@ -138,8 +145,8 @@ async function useClaude(prompt) {
 
         const model = new ChatAnthropic({
             apiKey: apiKey,
-            model: "claude-3-sonnet-20240229",
-            maxTokens: 500,
+            model: MODEL_CONFIG.claude.model,
+            maxTokens: MODEL_CONFIG.claude.maxTokens,
         });
 
         const response = await model.invoke([
@@ -164,12 +171,12 @@ async function useLocalModel(prompt) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: 'llama3',
+                model: MODEL_CONFIG.local.model,
                 prompt: prompt,
                 stream: false,
                 options: {
                     temperature: 0.7,
-                    max_tokens: 500,
+                    max_tokens: MODEL_CONFIG.local.maxTokens,
                 }
             }),
         });

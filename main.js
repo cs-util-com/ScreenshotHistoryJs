@@ -396,10 +396,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                             console.warn(`Additional image loading errors will be suppressed`);
                         }
                         
-                        loadingIndicator.innerHTML = "Image not available";
+                        // Create a shared placeholder image URL instead of generating it each time
+                        const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"%3E%3C/svg%3E';
                         
                         // Set a placeholder image to stop error cascade
-                        img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"%3E%3C/svg%3E';
+                        img.src = placeholderImage;
                         img.style.backgroundColor = "#333";
                         
                         // Prevent further error handling
@@ -409,24 +410,34 @@ document.addEventListener('DOMContentLoaded', async () => {
                     imgContainer.appendChild(loadingIndicator);
                     imgContainer.appendChild(img);
                     
-                    const textContainer = document.createElement('div');
-                    textContainer.className = 'px-4 py-2';
+                    // Extract repeated text container creation into a function
+                    function createTextContainer(item, timestamp) {
+                        const container = document.createElement('div');
+                        container.className = 'px-4 py-2';
+                        
+                        const time = document.createElement('p');
+                        time.textContent = formatTime(timestamp);
+                        time.className = 'text-sm text-gray-400';
+                        
+                        const text = document.createElement('p');
+                        text.textContent = item.ocrText ? truncateText(item.ocrText, 100) : 'No text detected';
+                        text.className = 'text-sm overflow-hidden overflow-ellipsis max-h-16';
+                        
+                        // Store timestamp in data attribute for OCR updates
+                        if (timestamp) {
+                            text.dataset.timestamp = timestamp;
+                        }
+                        
+                        container.appendChild(time);
+                        container.appendChild(text);
+                        return container;
+                    }
                     
-                    const time = document.createElement('p');
-                    time.textContent = formatTime(item.timestamp);
-                    time.className = 'text-sm text-gray-400';
-                    
-                    const text = document.createElement('p');
-                    text.textContent = item.ocrText ? truncateText(item.ocrText, 100) : 'No text detected';
-                    text.className = 'text-sm overflow-hidden overflow-ellipsis max-h-16';
-                    
-                    textContainer.appendChild(time);
-                    textContainer.appendChild(text);
-                    
+                    // Use the extracted function
                     gridItem.appendChild(imgContainer);
-                    gridItem.appendChild(textContainer);
+                    gridItem.appendChild(createTextContainer(item, item.timestamp));
                 } else {
-                    // It's a summary - leave this part unchanged
+                    // It's a summary - simplified version with the same pattern
                     gridItem.className += ' summary-tile bg-blue-900 text-white';
                     
                     const summaryContainer = document.createElement('div');

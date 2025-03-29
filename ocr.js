@@ -1,20 +1,27 @@
-import {
-    addScreenshot
-} from './storage.js';
+import { addScreenshot } from './storage.js';
 
 // Cache for language loading status to avoid repeated errors
 const languageLoadAttempts = {};
+// Create a shared placeholder image URL
+const PLACEHOLDER_IMAGE = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"%3E%3C/svg%3E';
+
+// Minimal worker logger to reduce console spam
+const minimalLogger = {
+    logger: m => {
+        if (m.status === 'recognizing text' && m.progress === 1) {
+            console.log('OCR completed');
+        }
+    },
+    errorHandler: err => console.error('Tesseract Worker Error:', err)
+};
 
 async function performOCR(imageSource, timestamp, imageUrl) {
     try {
         // Handle different input types (File object or Blob)
-        let imageBlob;
-        if (imageSource instanceof Blob) {
-            imageBlob = imageSource;
-        } else if (imageSource instanceof File) {
-            imageBlob = imageSource;
-        } else {
+        const imageBlob = (imageSource instanceof Blob) ? imageSource : null;
+        if (!imageBlob) {
             console.error('Invalid image source type:', typeof imageSource);
+            await addScreenshot(timestamp, imageUrl, '');
             return;
         }
         
@@ -27,39 +34,25 @@ async function performOCR(imageSource, timestamp, imageUrl) {
         }
         window._savedBlobs[timestamp] = imageBlob.slice(0);
         
-        // Get OCR language from local storage or use browser language
+        // Get OCR language, with fallback to browser language or English
         const ocrLanguage = localStorage.getItem('ocrLanguage') || 
             (navigator.language && navigator.language.split('-')[0]) || 'eng';
         
-        // Check if we've already failed to load this language
+        // Handle previously failed language loading
         if (languageLoadAttempts[ocrLanguage] === 'failed') {
-            console.warn(`Previously failed to load language: ${ocrLanguage}. Using English instead.`);
-            // Fall back to English if it wasn't already the selected language
             if (ocrLanguage !== 'eng') {
                 languageLoadAttempts['eng'] = 'pending';
             } else {
-                // If English also failed, store the screenshot without OCR
-                console.error('Cannot perform OCR: language data unavailable');
                 await addScreenshot(timestamp, finalImageUrl, '');
                 return;
             }
         }
         
-        // Create a Tesseract worker with minimal logging - disable almost all logs
-        const worker = await Tesseract.createWorker({
-            // Completely disable progress logger to eliminate console spam
-            logger: m => {
-                // Only log completion to help with debugging if needed
-                if (m.status === 'recognizing text' && m.progress === 1) {
-                    console.log('OCR completed');
-                }
-            },
-            errorHandler: err => console.error('Tesseract Worker Error:', err)
-        });
+        // Create a Tesseract worker with minimal logging
+        const worker = await Tesseract.createWorker(minimalLogger);
         
         try {
             const requestedLang = (ocrLanguage === 'en') ? 'eng' : ocrLanguage;
-            // Use CDN that actually works - try with current version
             await worker.loadLanguage(requestedLang);
             await worker.initialize(requestedLang);
             
@@ -68,39 +61,22 @@ async function performOCR(imageSource, timestamp, imageUrl) {
             
             // Perform recognition
             const { data } = await worker.recognize(imageBlob);
-            const text = data.text;
-            
-            // Only log if OCR actually found text
-            if (text && text.trim().length > 0) {
-                // Don't log the text at all to reduce console spam
-            }
-            
-            await addScreenshot(timestamp, finalImageUrl, text);
-            
-            // Terminate worker to free memory
+            await addScreenshot(timestamp, finalImageUrl, data.text);
             await worker.terminate();
             
         } catch (langError) {
             console.error(`Failed to load language '${ocrLanguage}':`, langError);
-            
-            // Mark this language as failed
             languageLoadAttempts[ocrLanguage] = 'failed';
             
-            // Fall back to English if not already trying
+            // Try English fallback if not already using it
             if (ocrLanguage !== 'eng') {
-                console.log('Falling back to English language for OCR');
                 try {
                     await worker.loadLanguage('eng');
                     await worker.initialize('eng');
                     
                     const { data } = await worker.recognize(imageBlob);
-                    const text = data.text;
-                    
-                    console.log('OCR completed with English fallback');
-                    await addScreenshot(timestamp, finalImageUrl, text);
-                    
+                    await addScreenshot(timestamp, finalImageUrl, data.text);
                 } catch (engError) {
-                    console.error('Failed to perform OCR with English fallback:', engError);
                     languageLoadAttempts['eng'] = 'failed';
                     await addScreenshot(timestamp, finalImageUrl, '');
                 }
@@ -108,17 +84,15 @@ async function performOCR(imageSource, timestamp, imageUrl) {
                 await addScreenshot(timestamp, finalImageUrl, '');
             }
             
-            // Clean up
             await worker.terminate();
         }
-
     } catch (error) {
         console.error('OCR Error:', error);
-        // Even if OCR fails, store the screenshot with empty text
         await addScreenshot(timestamp, imageUrl || null, '');
     }
 }
 
 export {
-    performOCR
+    performOCR,
+    PLACEHOLDER_IMAGE
 };
