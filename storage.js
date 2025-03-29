@@ -460,72 +460,6 @@ async function getRecentScreenshots(hours = 0.5) {
     }
 }
 
-// Database export functions - improved to use the rolling update mechanism
-async function exportDBToJson(directoryHandle) {
-    try {
-        if (!directoryHandle) {
-            console.warn('No directory handle available for DB export');
-            return;
-        }
-        
-        const date = new Date().toISOString().slice(0, 10);
-        const filename = `db-${date}.json`;
-        const tempFilename = `db-${date}.temp.json`;
-        
-        // Export both screenshots and summaries tables
-        const screenshots = await db.screenshots.toArray();
-        const summaries = await db.summaries.toArray();
-        
-        const exportData = {
-            screenshots: screenshots.map(s => ({
-                ...s,
-                // Don't include the actual blob URLs in the export
-                url: null,
-                timestamp: s.timestamp,
-                ocrText: s.ocrText
-            })),
-            summaries,
-            exportDate: new Date().toISOString()
-        };
-        
-        const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-            type: 'application/json'
-        });
-        
-        try {
-            // Write to temp file first
-            const tempFileHandle = await directoryHandle.getFileHandle(tempFilename, { create: true });
-            const tempWritable = await tempFileHandle.createWritable();
-            await tempWritable.write(blob);
-            await tempWritable.close();
-            
-            // Check if main file exists already
-            try {
-                // If it does, remove it (we're creating a new daily backup anyway)
-                await directoryHandle.removeEntry(filename);
-            } catch (e) {
-                // Ignore if file doesn't exist
-            }
-            
-            // Copy temp to main file
-            const tempFile = await tempFileHandle.getFile();
-            const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
-            const writable = await fileHandle.createWritable();
-            await writable.write(await tempFile.arrayBuffer());
-            await writable.close();
-            
-            // Remove temp file
-            await directoryHandle.removeEntry(tempFilename);
-            
-            console.log(`Database exported to ${filename}`);
-        } catch (error) {
-            console.error('Error writing DB export file:', error);
-        }
-    } catch (error) {
-        console.error('Error exporting database:', error);
-    }
-}
-
 // Handle database saving during user interactions
 function saveDbOnUserInteraction() {
     if (window._needsDatabaseSave) {
@@ -551,9 +485,6 @@ function scheduleDailyExport() {
             if (hasPermission) {
                 // Save main database file to the folder
                 await saveCurrentDatabaseToFolder();
-                
-                // Also save the daily export as required in specs
-                await exportDBToJson(dirHandle);
             } else {
                 console.log('No permission for auto-export, will try on next user interaction');
                 window._needsDatabaseSave = true;
@@ -572,7 +503,6 @@ export {
     searchScreenshots,
     getSummary,
     getRecentScreenshots,
-    exportDBToJson,
     resetDatabase,
     saveCurrentDatabaseToFolder,
     importFromJson,
