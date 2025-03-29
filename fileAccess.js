@@ -202,8 +202,37 @@ async function getDirectoryHandle() {
     return directoryHandle;
 }
 
+// Add cache to avoid repeatedly trying to load the same failing URLs
+const fileLoadAttempts = new Map();
+
+async function getScreenshotFile(fileHandle) {
+    // Check if we've already failed to load this file
+    const filePath = fileHandle.name;
+    if (fileLoadAttempts.has(filePath) && fileLoadAttempts.get(filePath) === 'failed') {
+        return null;
+    }
+    
+    try {
+        const file = await fileHandle.getFile();
+        const url = URL.createObjectURL(file);
+        fileLoadAttempts.set(filePath, 'success');
+        return { url, file };
+    } catch (e) {
+        console.error('Error getting screenshot file:', e);
+        // Mark this file as failed to prevent repeated attempts
+        fileLoadAttempts.set(filePath, 'failed');
+        return null;
+    }
+}
+
 async function getScreenshotFileUrl(timestamp) {
     if (!directoryHandle) return null;
+    
+    // Check if we've already tried and failed to get this timestamp
+    if (fileLoadAttempts.has(timestamp) && fileLoadAttempts.get(timestamp) === 'failed') {
+        return null;
+    }
+    
     // Rebuild the filename pattern used in saveScreenshot
     const formattedTimestamp = timestamp
         .replace(/:/g, '-')
@@ -222,9 +251,12 @@ async function getScreenshotFileUrl(timestamp) {
             fileHandle = await directoryHandle.getFileHandle(jpgFilename);
         }
         const file = await fileHandle.getFile();
-        return URL.createObjectURL(file);
+        const url = URL.createObjectURL(file);
+        fileLoadAttempts.set(timestamp, 'success');
+        return url;
     } catch (e) {
-        console.error('Could not retrieve screenshot file:', e);
+        // Reduce verbosity by not logging every failure
+        fileLoadAttempts.set(timestamp, 'failed');
         return null;
     }
 }
@@ -329,17 +361,6 @@ async function scanFolderForScreenshots() {
     } catch (e) {
         console.error('Error scanning folder for screenshots:', e);
         return [];
-    }
-}
-
-async function getScreenshotFile(fileHandle) {
-    try {
-        const file = await fileHandle.getFile();
-        const url = URL.createObjectURL(file);
-        return { url, file };
-    } catch (e) {
-        console.error('Error getting screenshot file:', e);
-        return null;
     }
 }
 
