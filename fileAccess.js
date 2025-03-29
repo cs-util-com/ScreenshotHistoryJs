@@ -47,6 +47,11 @@ async function selectFolder() {
             
             // Try to import database from the folder if it exists
             await tryImportDatabaseFromFolder();
+            
+            // Show notification that folder was selected successfully
+            if (window.showNotification) {
+                window.showNotification(`Screenshots will be saved to: ${folderName}`, 'success', 4000);
+            }
         } catch (e) {
             console.warn('Could not get folder name:', e);
             folderName = 'Selected Folder';

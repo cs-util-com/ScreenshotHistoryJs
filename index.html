@@ -74,36 +74,24 @@ additional explanations what you change are nice to have but not necessary.
     <h1 class="text-2xl font-bold mb-4">Screenshot History</h1>
 
     <div class="mb-4 flex items-center">
+      <button id="selectFolder" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded mr-2">
+        Select Folder
+      </button>
       <button id="startCapture" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-2">
         Start Capture
       </button>
       <button id="pauseCapture" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded mr-2 hidden">
         Pause Capture
       </button>
-      <button id="selectFolder" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded mr-2">
-        Select Folder
-      </button>
-      <span id="folderPath" class="ml-2">No folder selected</span>
-      <button id="openFolder" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded mr-2 hidden">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"></path>
-        </svg>
-      </button>
       <button id="openSettings" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded ml-auto">
         Settings
       </button>
-    </div>
-
-    <div id="folderDisplay" class="mb-4 text-sm text-gray-400">
-      <!-- Folder path will be displayed here -->
     </div>
 
     <div class="mb-4">
       <input type="text" id="search" placeholder="Search..."
         class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline dark:bg-gray-700 dark:text-white">
     </div>
-
-    <!-- Removed unused #imageGrid container -->
 
     <div id="dailyGroups" class="space-y-6">
       <!-- Daily grouped images and summaries will be loaded here -->

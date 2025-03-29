@@ -164,15 +164,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const startCaptureButton = document.getElementById('startCapture');
     const pauseCaptureButton = document.getElementById('pauseCapture');
     const selectFolderButton = document.getElementById('selectFolder');
-    const openFolderButton = document.getElementById('openFolder');
-    const folderPathDisplay = document.getElementById('folderPath');
     const searchInput = document.getElementById('search');
     const dailyGroups = document.getElementById('dailyGroups');
     const settingsModal = document.getElementById('settingsModal');
     const openSettingsButton = document.getElementById('openSettings');
     const closeSettingsButton = document.getElementById('closeSettings');
     const saveSettingsButton = document.getElementById('saveSettings');
-    const folderDisplay = document.getElementById('folderDisplay');
 
     // Add notification utility function to the window object so it can be used from other modules
     window.showNotification = function(message, type = 'info', duration = 5000) {
@@ -269,15 +266,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const hasDirectoryHandle = await restoreDirectoryHandle(false); // Pass false to avoid auto-showing picker
     
     if (folderPath) {
-        folderPathDisplay.textContent = folderPath;
-        folderDisplay.textContent = `Current folder: ${folderPath}`;
-        
-        if (hasDirectoryHandle) {
-            openFolderButton.classList.remove('hidden');
-        } else {
-            // We have a path saved but no directoryHandle
-            folderDisplay.textContent = `Current folder: ${folderPath} (Click "Select Folder" to restore access)`;
-        }
+        // Update the Select Folder button text to show the selected folder
+        selectFolderButton.textContent = `Folder: ${folderPath}`;
     }
 
     // Initially hide capture buttons until folder is confirmed
@@ -350,9 +340,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     selectFolderButton.addEventListener('click', async () => {
         const folderName = await selectFolder();
         if (folderName) {
-            folderPathDisplay.textContent = folderName;
-            folderDisplay.textContent = `Current folder: ${folderName}`;
-            openFolderButton.classList.remove('hidden');
+            // Update the button text to show the selected folder
+            selectFolderButton.textContent = `Folder: ${folderName}`;
             
             // Initialize database for the new folder
             await initDB();
@@ -379,20 +368,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const currentDirHandle = await getDirectoryHandle();
         if (currentDirHandle) {
             await saveCurrentDatabaseToFolder();
-        }
-    });
-
-    openFolderButton.addEventListener('click', async () => {
-        try {
-            // This will only work if the browser supports launchDirectory
-            // and the folder was selected with showDirectoryPicker()
-            if (window.directoryHandle && window.directoryHandle.requestPermission) {
-                await window.directoryHandle.requestPermission({ mode: 'readwrite' });
-                // On some platforms/browsers, this might open the folder in the OS file explorer
-                await window.showDirectoryPicker({ id: window.directoryHandle });
-            }
-        } catch (error) {
-            console.error('Error opening folder:', error);
         }
     });
 
