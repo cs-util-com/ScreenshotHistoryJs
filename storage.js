@@ -115,7 +115,7 @@ async function exportToJson() {
     }
 }
 
-// Save current database to folder
+// Save current database to folder with rolling update mechanism
 async function saveCurrentDatabaseToFolder() {
     const jsonData = await exportToJson();
     if (jsonData) {
@@ -125,7 +125,67 @@ async function saveCurrentDatabaseToFolder() {
             try {
                 const hasPermission = await verifyPermission(dirHandle, true);
                 if (hasPermission) {
-                    return await saveDatabaseToFolder(jsonData);
+                    // Use rolling update to prevent database corruption
+                    const mainDbFilename = 'screenshot-history-db.json';
+                    const tempDbFilename = 'screenshot-history-db.temp.json';
+                    const backupDbFilename = 'screenshot-history-db.backup.json';
+                    
+                    // 1. Write to temporary file first
+                    const tempBlob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
+                    const tempFileHandle = await dirHandle.getFileHandle(tempDbFilename, { create: true });
+                    const tempWritable = await tempFileHandle.createWritable();
+                    await tempWritable.write(tempBlob);
+                    await tempWritable.close();
+                    
+                    // 2. Try to rename existing file to backup (if it exists)
+                    try {
+                        // Check if main db file exists
+                        const mainFileHandle = await dirHandle.getFileHandle(mainDbFilename);
+                        // If it exists, try to rename it to backup
+                        try {
+                            // Remove previous backup if it exists
+                            try {
+                                await dirHandle.removeEntry(backupDbFilename);
+                            } catch (e) {
+                                // Ignore error if backup doesn't exist
+                            }
+                            
+                            // Create a new backup from the current main file
+                            const mainFile = await mainFileHandle.getFile();
+                            const backupFileHandle = await dirHandle.getFileHandle(backupDbFilename, { create: true });
+                            const backupWritable = await backupFileHandle.createWritable();
+                            await backupWritable.write(await mainFile.arrayBuffer());
+                            await backupWritable.close();
+                            
+                            // Remove the old main file
+                            await dirHandle.removeEntry(mainDbFilename);
+                        } catch (e) {
+                            console.warn('Error creating backup file:', e);
+                        }
+                    } catch (e) {
+                        // Main db file doesn't exist yet, that's ok
+                    }
+                    
+                    // 3. Rename temp file to main db file
+                    try {
+                        // Since File System Access API doesn't have direct rename, we need to:
+                        // - Copy the temp file content to the main filename
+                        // - Delete the temp file
+                        const tempFile = await tempFileHandle.getFile();
+                        const mainFileHandle = await dirHandle.getFileHandle(mainDbFilename, { create: true });
+                        const mainWritable = await mainFileHandle.createWritable();
+                        await mainWritable.write(await tempFile.arrayBuffer());
+                        await mainWritable.close();
+                        
+                        // Delete the temp file
+                        await dirHandle.removeEntry(tempDbFilename);
+                        
+                        console.log('Database saved to folder successfully with rolling update');
+                        return true;
+                    } catch (e) {
+                        console.error('Error renaming temp database file:', e);
+                        return false;
+                    }
                 } else {
                     console.warn('No permission to save database, will try later');
                     window._needsDatabaseSave = jsonData;
@@ -143,13 +203,13 @@ async function saveCurrentDatabaseToFolder() {
 async function addScreenshot(timestamp, url, ocrText) {
     try {
         await db.screenshots.put({
-            timestamp,
-            url,
-            ocrText
+            timestamp,  // This serves as the ID in the database
+            url,        // URL is temporary and not included in exports
+            ocrText     // The OCR text is what we want to persist
         });
-        console.log('Screenshot added to DB:', timestamp);
+        console.log('Screenshot OCR data added to DB:', timestamp);
         
-        // Instead of auto-saving immediately via setTimeout, mark for saving on next user interaction
+        // Mark for saving on next user interaction instead of immediate autosave
         window._needsDatabaseSave = true;
     } catch (error) {
         console.error('Error adding screenshot to DB:', error);
@@ -177,88 +237,126 @@ async function addSummary(startTime, endTime, text) {
     }
 }
 
-// New function to get screenshots directly from the folder with OCR data if available
-async function getScreenshotsFromFolder(searchTerm = '') {
+// Simplified function that directly accesses folder screenshots
+// This is more efficient when we don't need OCR data filtering
+async function getScreenshotsFromFolder(limit = null) {
     try {
-        // First scan the folder for all screenshots
+        // Scan the folder for all screenshots
         const folderScreenshots = await scanFolderForScreenshots();
         
-        // Initialize an array to store the results with OCR data
-        const results = [];
+        // If a limit is provided, only return that many
+        const limitedScreenshots = limit ? folderScreenshots.slice(0, limit) : folderScreenshots;
         
-        // Process each screenshot from the folder
-        for (const screenshot of folderScreenshots) {
-            // Try to find OCR data in the database
-            const dbEntry = await db.screenshots.get(screenshot.timestamp);
-            
-            // Create a result object for this screenshot
-            const result = {
-                ...screenshot,
-                timestamp: screenshot.timestamp,
-                ocrText: dbEntry ? dbEntry.ocrText : '',
-                url: null // Will be set below
-            };
-            
-            // If there's a search term and we have OCR data, check if it matches
-            if (searchTerm && result.ocrText) {
-                if (!result.ocrText.toLowerCase().includes(searchTerm.toLowerCase())) {
-                    continue; // Skip this screenshot if it doesn't match the search term
-                }
-            }
-            
-            // Get the actual file and create a URL
-            const fileData = await getScreenshotFile(screenshot.fileHandle);
-            if (fileData) {
-                result.url = fileData.url;
-                
-                // If we don't have OCR data for this screenshot, perform OCR in the background
-                if (!dbEntry || !dbEntry.ocrText) {
-                    console.log(`No OCR data found for ${screenshot.filename}, running OCR...`);
-                    // Use a setTimeout to avoid blocking the UI while processing many files
-                    setTimeout(async () => {
-                        try {
-                            await performOCR(fileData.file, screenshot.timestamp, fileData.url);
-                        } catch (e) {
-                            console.error('Error performing background OCR:', e);
-                        }
-                    }, 0);
-                }
-            }
-            
-            results.push(result);
-        }
-        
-        return results;
+        // Create basic objects with timestamps that match DB entries
+        return limitedScreenshots.map(screenshot => ({
+            ...screenshot,
+            url: null // URL will be set when needed for display
+        }));
     } catch (error) {
         console.error('Error getting screenshots from folder:', error);
         return [];
     }
 }
 
-// Modified search function to combine folder files with database summaries
+// Modified search function to efficiently search database first, then match with filesystem
 async function searchScreenshots(searchTerm) {
     try {
-        // Get screenshots from folder that match the search term
-        const screenshots = await getScreenshotsFromFolder(searchTerm);
+        // First, get all the screenshots from the folder to have the full list
+        // This ensures we have access to the images even if OCR isn't in the DB yet
+        const folderScreenshots = await scanFolderForScreenshots();
         
-        // Get summaries from the database that match the search term
-        let summaries = [];
+        // Create a map for quick lookup of screenshots by timestamp
+        const screenshotMap = new Map();
+        folderScreenshots.forEach(screenshot => {
+            screenshotMap.set(screenshot.timestamp, screenshot);
+        });
+        
+        // If no search term, return all screenshots from folder + all summaries
         if (!searchTerm) {
-            // Get all summaries if no search term
-            summaries = await db.summaries.toArray();
+            // Get all summaries from database
+            const summaries = await db.summaries.toArray();
+            
+            // For each screenshot, try to add OCR text from database if available
+            const results = await Promise.all(folderScreenshots.map(async (screenshot) => {
+                const dbEntry = await db.screenshots.get(screenshot.timestamp);
+                
+                // Create a merged object with file info and OCR text if available
+                const result = {
+                    ...screenshot,
+                    ocrText: dbEntry ? dbEntry.ocrText : '',
+                    url: null // Will be set when needed for display
+                };
+                
+                // Get the actual file and create a URL if needed for immediate display
+                const fileData = await getScreenshotFile(screenshot.fileHandle);
+                if (fileData) {
+                    result.url = fileData.url;
+                    
+                    // If we don't have OCR data for this screenshot, perform OCR in the background
+                    if (!dbEntry || !dbEntry.ocrText) {
+                        console.log(`No OCR data found for ${screenshot.filename}, running OCR...`);
+                        setTimeout(async () => {
+                            try {
+                                await performOCR(fileData.file, screenshot.timestamp, fileData.url);
+                            } catch (e) {
+                                console.error('Error performing background OCR:', e);
+                            }
+                        }, 0);
+                    }
+                }
+                
+                return result;
+            }));
+            
+            // Combine and sort screenshots and summaries
+            return [...results, ...summaries].sort((a, b) => {
+                const timeA = a.timestamp || a.endTime;
+                const timeB = b.timestamp || b.endTime;
+                return timeB.localeCompare(timeA); // Newest first
+            });
         } else {
-            // Filter summaries by search term
-            summaries = await db.summaries
+            // With a search term, first search the database for OCR text matches
+            const matchingScreenshots = await db.screenshots
+                .filter(item => item.ocrText && item.ocrText.toLowerCase().includes(searchTerm.toLowerCase()))
+                .toArray();
+            
+            // Search summaries for matches
+            const matchingSummaries = await db.summaries
                 .filter(item => item.text && item.text.toLowerCase().includes(searchTerm.toLowerCase()))
                 .toArray();
+            
+            // For each matching screenshot entry, get the corresponding file from the folder
+            const results = await Promise.all(matchingScreenshots.map(async (dbEntry) => {
+                // Try to find matching file in our folder scan results
+                const folderEntry = screenshotMap.get(dbEntry.timestamp);
+                
+                if (folderEntry) {
+                    // Get the file data for display
+                    const fileData = await getScreenshotFile(folderEntry.fileHandle);
+                    
+                    return {
+                        ...folderEntry,
+                        ocrText: dbEntry.ocrText,
+                        url: fileData ? fileData.url : null
+                    };
+                } else {
+                    // Database entry exists but file not found in folder
+                    return {
+                        timestamp: dbEntry.timestamp,
+                        ocrText: dbEntry.ocrText,
+                        url: null,
+                        missing: true // Flag to indicate file is missing
+                    };
+                }
+            }));
+            
+            // Combine and sort screenshots and summaries
+            return [...results, ...matchingSummaries].sort((a, b) => {
+                const timeA = a.timestamp || a.endTime;
+                const timeB = b.timestamp || b.endTime;
+                return timeB.localeCompare(timeA); // Newest first
+            });
         }
-        
-        // Combine and sort
-        return [...screenshots, ...summaries].sort((a, b) => {
-            const timeA = a.timestamp || a.endTime;
-            const timeB = b.timestamp || b.endTime;
-            return timeB.localeCompare(timeA); // Descending order (newest first)
-        });
     } catch (error) {
         console.error('Error searching data:', error);
         return [];
@@ -290,7 +388,7 @@ async function getRecentScreenshots(hours = 0.5) {
     }
 }
 
-// Database export functions
+// Database export functions - improved to use the rolling update mechanism
 async function exportDBToJson(directoryHandle) {
     try {
         if (!directoryHandle) {
@@ -300,6 +398,7 @@ async function exportDBToJson(directoryHandle) {
         
         const date = new Date().toISOString().slice(0, 10);
         const filename = `db-${date}.json`;
+        const tempFilename = `db-${date}.temp.json`;
         
         // Export both screenshots and summaries tables
         const screenshots = await db.screenshots.toArray();
@@ -322,10 +421,29 @@ async function exportDBToJson(directoryHandle) {
         });
         
         try {
+            // Write to temp file first
+            const tempFileHandle = await directoryHandle.getFileHandle(tempFilename, { create: true });
+            const tempWritable = await tempFileHandle.createWritable();
+            await tempWritable.write(blob);
+            await tempWritable.close();
+            
+            // Check if main file exists already
+            try {
+                // If it does, remove it (we're creating a new daily backup anyway)
+                await directoryHandle.removeEntry(filename);
+            } catch (e) {
+                // Ignore if file doesn't exist
+            }
+            
+            // Copy temp to main file
+            const tempFile = await tempFileHandle.getFile();
             const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
             const writable = await fileHandle.createWritable();
-            await writable.write(blob);
+            await writable.write(await tempFile.arrayBuffer());
             await writable.close();
+            
+            // Remove temp file
+            await directoryHandle.removeEntry(tempFilename);
             
             console.log(`Database exported to ${filename}`);
         } catch (error) {

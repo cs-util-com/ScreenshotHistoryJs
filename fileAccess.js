@@ -118,6 +118,7 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
         // Create a permanent object URL that won't be garbage collected
         let imageUrl;
         let savedBlob;
+        let savedFilename;
         
         // Delete the larger file
         if (pngBlob.size > jpgBlob.size) {
@@ -126,6 +127,7 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
                 console.log('Deleted PNG, keeping JPG.');
                 savedBlob = jpgBlob.slice(0); // Create a copy of the blob
                 imageUrl = URL.createObjectURL(savedBlob);
+                savedFilename = jpgFilename;
             } catch (e) {
                 console.error('Error removing PNG file:', e);
             }
@@ -135,6 +137,7 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
                 console.log('Deleted JPG, keeping PNG.');
                 savedBlob = pngBlob.slice(0); // Create a copy of the blob
                 imageUrl = URL.createObjectURL(savedBlob);
+                savedFilename = pngFilename;
             } catch (e) {
                 console.error('Error removing JPG file:', e);
             }
@@ -155,6 +158,13 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
             console.error('Error during OCR:', e);
         }
 
+        // Return information about the saved file
+        return {
+            timestamp,
+            filename: savedFilename,
+            url: imageUrl
+        };
+
     } catch (error) {
         console.error('Error saving screenshot:', error);
         
@@ -163,6 +173,7 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
             window._pendingPermissionRequest = true;
             console.warn('Permission denied when saving. Will try to restore permissions on next user interaction.');
         }
+        return null;
     }
 }
 
