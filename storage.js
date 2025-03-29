@@ -376,9 +376,10 @@ async function searchScreenshots(searchTerm) {
             screenshotMap.set(screenshot.timestamp, screenshot);
         });
         
-        // If no search term, return all screenshots from folder + all summaries
+        // If no search term, return all screenshots from folder
         if (!searchTerm || searchTerm.trim() === '') {
-            // ...existing code for returning all screenshots...
+            console.log(`Empty search term, returning ${folderScreenshots.length} screenshots`);
+            return folderScreenshots;
         } else {
             console.log(`Searching for "${searchTerm}" in OCR text and summaries`);
             const searchTermLower = searchTerm.toLowerCase().trim();
