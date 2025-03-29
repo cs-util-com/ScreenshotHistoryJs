@@ -88,12 +88,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Check if capturing was active before reload
-    const capturingActive = localStorage.getItem('capturingActive') === 'true';
-    if (capturingActive) {
-        startCapture();
-        startCaptureButton.classList.add('hidden');
-        pauseCaptureButton.classList.remove('hidden');
+    // Initially hide capture buttons until folder is confirmed
+    startCaptureButton.classList.add('hidden');
+    pauseCaptureButton.classList.add('hidden');
+    
+    // Request folder if none selected
+    if (!hasDirectoryHandle && !folderPath) {
+        await selectFolder();
+    }
+
+    // If we have a folder path and directory handle, show capture buttons
+    if (await getDirectoryHandle()) {
+        startCaptureButton.classList.remove('hidden');
+        
+        // Check if capturing was active before reload
+        const capturingActive = localStorage.getItem('capturingActive') === 'true';
+        if (capturingActive) {
+            startCapture();
+            startCaptureButton.classList.add('hidden');
+            pauseCaptureButton.classList.remove('hidden');
+        }
     }
 
     // Event listeners
@@ -122,6 +136,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             const dirHandle = await getDirectoryHandle();
             if (dirHandle) {
                 await exportDBToJson(dirHandle);
+            }
+
+            startCaptureButton.classList.remove('hidden');
+            if (localStorage.getItem('capturingActive') === 'true') {
+                startCapture();
+                startCaptureButton.classList.add('hidden');
+                pauseCaptureButton.classList.remove('hidden');
             }
         }
     });
