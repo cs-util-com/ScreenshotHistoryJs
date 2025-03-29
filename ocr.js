@@ -1,4 +1,4 @@
-import { addScreenshot } from './storage.js';
+import { addScreenshot, isScreenshotOcrProcessed, markScreenshotAsOcrProcessed } from './storage.js';
 
 // Cache for language loading status to avoid repeated errors
 const languageLoadAttempts = {};
@@ -15,6 +15,9 @@ const OCR_CONFIG = {
   maxRetries: 2,           // Number of retries with reduced resolution
   rescaleFactor: 0.5       // How much to reduce on each retry
 };
+
+// Tracking for in-progress OCR to prevent duplicate processing in the current session only
+const inProgressOcr = new Set();
 
 // Minimal worker logger to reduce console spam
 const minimalLogger = {
@@ -75,6 +78,26 @@ async function downscaleImageForOCR(imageBlob, maxWidth = OCR_CONFIG.maxImageWid
 }
 
 async function performOCR(imageSource, timestamp, imageUrl) {
+    try {
+        // Check database first if this image was already processed
+        if (await isScreenshotOcrProcessed(timestamp)) {
+            console.log(`OCR already completed for image ${timestamp} (found in database), skipping`);
+            return;
+        }
+    } catch (dbError) {
+        // If database check fails, continue with in-memory check as fallback
+        console.warn('Error checking OCR status in database:', dbError);
+    }
+    
+    // Skip if this image is already being processed in the current session
+    if (inProgressOcr.has(timestamp)) {
+        console.log(`OCR already in progress for image ${timestamp}, skipping duplicate job`);
+        return;
+    }
+    
+    // Mark this timestamp as being processed for this session
+    inProgressOcr.add(timestamp);
+    
     try {
         // Early validation check before processing
         if (!imageSource) {
@@ -223,17 +246,18 @@ async function performOCR(imageSource, timestamp, imageUrl) {
         }
         
         // Store the screenshot with whatever OCR text we got (even if empty)
+        // The addScreenshot function will mark it as processed in the database
         await addScreenshot(timestamp, finalImageUrl, ocrText);
-        
-        // Clean up temporary rescaled blob
-        if (processingBlob !== imageBlob) {
-            // Free memory for the scaled-down blob if we created one
-            URL.revokeObjectURL(URL.createObjectURL(processingBlob));
-        }
         
     } catch (error) {
         console.error('OCR Error:', error);
+        // Still add to DB but with empty text, and mark as processed
         await addScreenshot(timestamp, imageUrl || null, '');
+        // Explicitly mark as processed in case addScreenshot didn't
+        await markScreenshotAsOcrProcessed(timestamp);
+    } finally {
+        // Remove from in-progress set for this session
+        inProgressOcr.delete(timestamp);
     }
 }
 

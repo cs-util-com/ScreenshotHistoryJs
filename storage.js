@@ -46,7 +46,7 @@ async function initDB() {
     if (!db || db.name !== dbName) {
         db = new Dexie(dbName);
         db.version(1).stores({
-            screenshots: 'timestamp, ocrText',
+            screenshots: 'timestamp, ocrText, ocrProcessed', // Add ocrProcessed flag
             summaries: 'id, startTime, endTime, text',
             settings: 'key'
         });
@@ -229,7 +229,7 @@ async function saveCurrentDatabaseToFolder() {
     return false;
 }
 
-// Modified version of addScreenshot with safer DB access and better UI update handling
+// Modified version of addScreenshot with ocrProcessed flag
 async function addScreenshot(timestamp, url, ocrText) {
     try {
         // Make sure DB is initialized
@@ -239,9 +239,10 @@ async function addScreenshot(timestamp, url, ocrText) {
         }
         
         await db.screenshots.put({
-            timestamp,  // This serves as the ID in the database
-            url,        // URL is temporary and not included in exports
-            ocrText     // The OCR text is what we want to persist
+            timestamp,            // This serves as the ID in the database
+            url,                  // URL is temporary and not included in exports
+            ocrText,              // The OCR text is what we want to persist
+            ocrProcessed: true    // Mark as processed when adding with OCR text
         });
         
         // Reduced logging - only log if there's actual OCR text
@@ -279,6 +280,38 @@ async function addScreenshot(timestamp, url, ocrText) {
             console.log('Database was closed, attempting to reopen');
             await initDB();
         }
+    }
+}
+
+// Add a function to check if screenshot was already OCR processed
+async function isScreenshotOcrProcessed(timestamp) {
+    try {
+        if (!db || !db.isOpen()) {
+            await initDB();
+        }
+        
+        const screenshot = await db.screenshots.get(timestamp);
+        return screenshot && screenshot.ocrProcessed === true;
+    } catch (error) {
+        console.warn('Error checking OCR status:', error);
+        return false;
+    }
+}
+
+// Mark a screenshot as OCR processed (for cases where we processed but got no text)
+async function markScreenshotAsOcrProcessed(timestamp) {
+    try {
+        if (!db || !db.isOpen()) {
+            await initDB();
+        }
+        
+        const screenshot = await db.screenshots.get(timestamp);
+        if (screenshot) {
+            screenshot.ocrProcessed = true;
+            await db.screenshots.put(screenshot);
+        }
+    } catch (error) {
+        console.warn('Error marking screenshot as processed:', error);
     }
 }
 
@@ -355,6 +388,7 @@ async function searchScreenshots(searchTerm) {
                 const result = {
                     ...screenshot,
                     ocrText: dbEntry ? dbEntry.ocrText : '',
+                    ocrProcessed: dbEntry ? dbEntry.ocrProcessed : false,
                     url: null // Will be set when needed for display
                 };
                 
@@ -363,16 +397,32 @@ async function searchScreenshots(searchTerm) {
                 if (fileData) {
                     result.url = fileData.url;
                     
-                    // If we don't have OCR data for this screenshot, perform OCR in the background
-                    if (!dbEntry || !dbEntry.ocrText) {
-                        // Reduced logging - just perform the OCR without the verbose log
-                        setTimeout(async () => {
-                            try {
-                                await performOCR(fileData.file, screenshot.timestamp, fileData.url);
-                            } catch (e) {
-                                console.error('Error performing background OCR:', e);
-                            }
-                        }, 0);
+                    // Check if we need to perform OCR (only if there's no OCR text AND it wasn't processed before)
+                    if ((!dbEntry || dbEntry.ocrProcessed !== true)) {
+                        // Only track in-progress OCR to prevent duplicate processing during this session
+                        if (!window._ocr_in_progress) window._ocr_in_progress = new Set();
+                        
+                        // Skip if already in progress
+                        if (!window._ocr_in_progress.has(screenshot.timestamp)) {
+                            // Mark as in progress for this session
+                            window._ocr_in_progress.add(screenshot.timestamp);
+                            
+                            // Schedule OCR in the background
+                            setTimeout(async () => {
+                                try {
+                                    await performOCR(fileData.file, screenshot.timestamp, fileData.url);
+                                } catch (e) {
+                                    console.error('Error performing background OCR:', e);
+                                    // Still mark as processed to avoid repeated failures
+                                    await markScreenshotAsOcrProcessed(screenshot.timestamp);
+                                } finally {
+                                    // Remove from in-progress set
+                                    if (window._ocr_in_progress) {
+                                        window._ocr_in_progress.delete(screenshot.timestamp);
+                                    }
+                                }
+                            }, 0);
+                        }
                     }
                 }
                 
@@ -408,6 +458,7 @@ async function searchScreenshots(searchTerm) {
                     return {
                         ...folderEntry,
                         ocrText: dbEntry.ocrText,
+                        ocrProcessed: dbEntry.ocrProcessed,
                         url: fileData ? fileData.url : null
                     };
                 } else {
@@ -415,6 +466,7 @@ async function searchScreenshots(searchTerm) {
                     return {
                         timestamp: dbEntry.timestamp,
                         ocrText: dbEntry.ocrText,
+                        ocrProcessed: dbEntry.ocrProcessed,
                         url: null,
                         missing: true // Flag to indicate file is missing
                     };
@@ -513,5 +565,7 @@ export {
     saveCurrentDatabaseToFolder,
     importFromJson,
     getScreenshotsFromFolder,
-    saveDbOnUserInteraction
+    saveDbOnUserInteraction,
+    isScreenshotOcrProcessed,
+    markScreenshotAsOcrProcessed
 };
