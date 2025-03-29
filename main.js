@@ -61,6 +61,32 @@ function openLargeImageViewer(imageList, startIndex = 0) {
         lightbox.remove();
     });
 
+    // Create left navigation arrow
+    const leftArrow = document.createElement('button');
+    leftArrow.className = 'absolute left-4 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 hover:bg-opacity-70 text-white rounded-full p-2 focus:outline-none z-10';
+    leftArrow.innerHTML = `
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+        </svg>
+    `;
+    leftArrow.addEventListener('click', () => {
+        currentImageIndex = (currentImageIndex > 0) ? currentImageIndex - 1 : currentImageList.length - 1;
+        showImage(currentImageIndex);
+    });
+
+    // Create right navigation arrow
+    const rightArrow = document.createElement('button');
+    rightArrow.className = 'absolute right-4 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 hover:bg-opacity-70 text-white rounded-full p-2 focus:outline-none z-10';
+    rightArrow.innerHTML = `
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+        </svg>
+    `;
+    rightArrow.addEventListener('click', () => {
+        currentImageIndex = (currentImageIndex < currentImageList.length - 1) ? currentImageIndex + 1 : 0;
+        showImage(currentImageIndex);
+    });
+
     // Create image container
     const imgContainer = document.createElement('div');
     imgContainer.className = 'relative max-w-screen-xl max-h-screen p-4 overflow-auto';
@@ -79,6 +105,8 @@ function openLargeImageViewer(imageList, startIndex = 0) {
     imgContainer.appendChild(img);
     imgContainer.appendChild(metaInfo);
     lightbox.appendChild(closeBtn);
+    lightbox.appendChild(leftArrow);
+    lightbox.appendChild(rightArrow);
     lightbox.appendChild(imgContainer);
 
     // Add close on click outside image
