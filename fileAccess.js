@@ -90,15 +90,31 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
     }
 
     try {
-        // Format timestamp for more readable filenames (YYYY-MM-DD-HH-MM-SS)
-        // Make sure we don't have any invalid characters like colons or dots in the filename
-        // Fix: Use a more consistent format for filenames
-        const isoDate = new Date(timestamp).toISOString();
-        const formattedTimestamp = isoDate
-            .replace(/:/g, '-')
-            .replace(/\./g, '-')
-            .replace('Z', '')
-            .replace('T', '_');
+        // More robust timestamp formatting to ensure valid filenames
+        let formattedTimestamp;
+        
+        try {
+            // First verify the timestamp is a valid date
+            const date = new Date(timestamp);
+            if (isNaN(date.getTime())) {
+                throw new Error('Invalid timestamp');
+            }
+            
+            // Format it consistently
+            formattedTimestamp = date.toISOString()
+                .replace(/:/g, '-')
+                .replace(/\./g, '-')
+                .replace('Z', '')
+                .replace('T', '_');
+        } catch (e) {
+            // If there's any issue with the timestamp, use current time as fallback
+            console.warn('Invalid timestamp provided, using current time instead:', timestamp);
+            formattedTimestamp = new Date().toISOString()
+                .replace(/:/g, '-')
+                .replace(/\./g, '-')
+                .replace('Z', '')
+                .replace('T', '_');
+        }
         
         const pngFilename = `screenshot_${formattedTimestamp}.png`;
         const jpgFilename = `screenshot_${formattedTimestamp}.jpg`;
@@ -167,7 +183,7 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
 
         // Return information about the saved file
         return {
-            timestamp,
+            timestamp,  // Keep the original timestamp for database consistency
             filename: savedFilename,
             url: imageUrl
         };
@@ -328,13 +344,48 @@ async function scanFolderForScreenshots() {
                 try {
                     // Extract timestamp from filename
                     const timestampPart = filename.replace('screenshot_', '').replace('.png', '').replace('.jpg', '');
-                    // Convert back to ISO format timestamp for consistency
-                    const isoTimestamp = timestampPart
-                        .replace('_', 'T')
-                        .replace(/-/g, (match, offset) => {
-                            // Replace the first 3 dashes to restore ISO format, but keep others as is
-                            return offset < 10 ? ':' : match;
-                        }) + 'Z';
+                    
+                    // More robust timestamp conversion
+                    let isoTimestamp;
+                    
+                    try {
+                        // First try to parse it as our formatted timestamp
+                        const parts = timestampPart.split('_');
+                        if (parts.length === 2) {
+                            // It's in the expected format YYYY-MM-DD_HH-MM-SS-ms
+                            const [datePart, timePart] = parts;
+                            // Convert to ISO format
+                            isoTimestamp = datePart + 'T' + 
+                                timePart.replace(/-/g, (match, offset) => {
+                                    // Only replace first two dashes to colons
+                                    return offset < 5 ? ':' : match;
+                                }) + 'Z';
+                        } else {
+                            // Try another approach - use the current implementation
+                            isoTimestamp = timestampPart
+                                .replace('_', 'T')
+                                .replace(/-/g, (match, offset) => {
+                                    // Replace the first 3 dashes to restore ISO format
+                                    return offset < 10 ? ':' : match;
+                                }) + 'Z';
+                        }
+                        
+                        // Verify it's a valid date
+                        const testDate = new Date(isoTimestamp);
+                        if (isNaN(testDate.getTime())) {
+                            throw new Error('Invalid timestamp');
+                        }
+                    } catch (e) {
+                        // If we can't parse it properly, create a fake but valid timestamp
+                        // This ensures we can still display the image even without proper metadata
+                        console.warn(`Could not parse timestamp from filename: ${filename}`, e);
+                        
+                        // Use file creation time or current time as fallback
+                        const file = await entry.getFile();
+                        isoTimestamp = file.lastModified ? 
+                            new Date(file.lastModified).toISOString() : 
+                            new Date().toISOString();
+                    }
                     
                     screenshots.push({
                         filename,

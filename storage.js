@@ -5,6 +5,9 @@ let db;
 let exportIntervalId;
 let currentFolderId = null;
 
+// Global reference for active databases to prevent closing in use DBs
+const activeDatabases = new Map();
+
 async function initDB() {
     // Get current folder ID from localStorage (set in fileAccess.js)
     const folderId = localStorage.getItem('currentFolderId') || 'default';
@@ -13,10 +16,29 @@ async function initDB() {
     const dbName = `ScreenshotHistory_${folderId}`;
     console.log(`Initializing database for folder: ${folderId}`);
     
-    // Close existing database if open
-    if (db && db.name !== dbName) {
+    // Check if we already have this DB instance cached
+    const existingDb = activeDatabases.get(dbName);
+    if (existingDb && !existingDb.isOpen()) {
+        console.log(`Database ${dbName} was closed, reopening`);
+        await existingDb.open();
+    }
+    
+    // If we have an active DB with this name, use it
+    if (existingDb && existingDb.isOpen()) {
+        db = existingDb;
+        return db;
+    }
+    
+    // Close existing database if it's a different one
+    if (db && db.name !== dbName && db.isOpen()) {
         console.log(`Closing previous database: ${db.name}`);
-        db.close();
+        try {
+            db.close();
+            // Remove from active DBs map
+            activeDatabases.delete(db.name);
+        } catch (e) {
+            console.warn(`Error closing database ${db.name}:`, e);
+        }
         db = null;
     }
     
@@ -30,6 +52,8 @@ async function initDB() {
         });
         
         await db.open();
+        // Add to active databases map
+        activeDatabases.set(dbName, db);
         currentFolderId = folderId;
         
         // Check if we have a pending database import from the folder
@@ -199,8 +223,15 @@ async function saveCurrentDatabaseToFolder() {
     return false;
 }
 
+// Modified version of addScreenshot with safer DB access
 async function addScreenshot(timestamp, url, ocrText) {
     try {
+        // Make sure DB is initialized
+        if (!db || !db.isOpen()) {
+            console.log('Database not open, initializing before adding screenshot');
+            await initDB();
+        }
+        
         await db.screenshots.put({
             timestamp,  // This serves as the ID in the database
             url,        // URL is temporary and not included in exports
@@ -216,7 +247,6 @@ async function addScreenshot(timestamp, url, ocrText) {
         window._needsDatabaseSave = true;
         
         // Update the UI if the updateUIWithNewScreenshot function is available
-        // This is a fallback in case the direct update from capture.js doesn't work
         try {
             if (window.updateUIWithNewScreenshot && url) {
                 const screenshotInfo = {
@@ -240,6 +270,12 @@ async function addScreenshot(timestamp, url, ocrText) {
         }
     } catch (error) {
         console.error('Error adding screenshot to DB:', error);
+        
+        // Attempt to reopen the database if it's a DatabaseClosedError
+        if (error.name === 'DatabaseClosedError') {
+            console.log('Database was closed, attempting to reopen');
+            await initDB();
+        }
     }
 }
 
@@ -285,11 +321,16 @@ async function getScreenshotsFromFolder(limit = null) {
     }
 }
 
-// Modified search function for better error handling
+// Modified database search to handle database closed scenarios
 async function searchScreenshots(searchTerm) {
     try {
+        // Ensure database is open
+        if (!db || !db.isOpen()) {
+            console.log('Database not open, initializing before search');
+            await initDB();
+        }
+        
         // First, get all the screenshots from the folder to have the full list
-        // This ensures we have access to the images even if OCR isn't in the DB yet
         const folderScreenshots = await scanFolderForScreenshots();
         
         // Create a map for quick lookup of screenshots by timestamp
@@ -338,7 +379,7 @@ async function searchScreenshots(searchTerm) {
             // Combine and sort screenshots and summaries
             return [...results, ...summaries].sort((a, b) => {
                 const timeA = a.timestamp || a.endTime;
-                const timeB = b.timestamp || b.endTime;
+                const timeB = a.timestamp || a.endTime;
                 return timeB.localeCompare(timeA); // Newest first
             });
         } else {
@@ -380,12 +421,19 @@ async function searchScreenshots(searchTerm) {
             // Combine and sort screenshots and summaries
             return [...results, ...matchingSummaries].sort((a, b) => {
                 const timeA = a.timestamp || a.endTime;
-                const timeB = b.timestamp || b.endTime;
+                const timeB = a.timestamp || a.endTime;
                 return timeB.localeCompare(timeA); // Newest first
             });
         }
     } catch (error) {
         console.error('Error searching data:', error);
+        // Attempt to reopen the database if it's a DatabaseClosedError
+        if (error.name === 'DatabaseClosedError') {
+            console.log('Database was closed, attempting to reopen');
+            await initDB();
+            // Try the search again after reopening
+            return searchScreenshots(searchTerm);
+        }
         return [];
     }
 }

@@ -280,8 +280,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         
+        // Filter out items without valid timestamps before grouping
+        const validItems = items.filter(item => {
+            const hasTimestamp = item.timestamp || item.endTime;
+            if (!hasTimestamp) {
+                console.warn('Skipping item without timestamp:', item);
+            }
+            return hasTimestamp;
+        });
+
         // Group items by date
-        const grouped = groupByDate(items);
+        const grouped = groupByDate(validItems);
         
         // Create a section for each date
         for (const date in grouped) {
@@ -451,7 +460,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Group items by date
+    // Group items by date - add extra validation
     function groupByDate(items) {
         return items.reduce((groups, item) => {
             // Get date from timestamp or endTime
@@ -521,8 +530,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Format time for display - fix timestamp parsing issues
+    // Format time for display - improved error handling
     function formatTime(timestamp) {
+        // Handle undefined or null timestamps gracefully
+        if (!timestamp) {
+            return 'Unknown time';
+        }
+        
         try {
             let date;
             if (typeof timestamp === 'string') {
@@ -587,7 +601,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 minute: '2-digit'
             });
         } catch (error) {
-            console.warn('Error formatting time:', timestamp);
+            // Log warning but don't clutter console
+            // console.warn('Error formatting time:', timestamp);
             return typeof timestamp === 'string' ? 
                 timestamp.split('T')[1]?.substring(0, 5) || 'Unknown time' : 
                 'Unknown time';
@@ -724,6 +739,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             const checkOcrText = async () => {
                 attempts++;
                 try {
+                    // Make sure we have a live database connection
+                    if (!db || !db.isOpen()) {
+                        console.log('Database not open when checking OCR, initializing');
+                        await initDB();
+                    }
+                    
                     // Get the screenshot record from the database
                     const dbEntry = await db.screenshots.get(screenshotInfo.timestamp);
                     
@@ -748,6 +769,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 } catch (error) {
                     console.error('Error checking OCR text:', error);
+                    
+                    // Attempt to reopen the database if it's a DatabaseClosedError
+                    if (error.name === 'DatabaseClosedError') {
+                        console.log('Database was closed, attempting to reopen');
+                        try {
+                            await initDB();
+                            // Try again immediately after reopening
+                            if (attempts < maxAttempts) {
+                                setTimeout(checkOcrText, 1000);
+                            }
+                        } catch (dbError) {
+                            console.error('Failed to reopen database:', dbError);
+                        }
+                    }
                 }
             };
             
