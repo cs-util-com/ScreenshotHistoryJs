@@ -24,26 +24,19 @@ Screenshot History is a browser-based, offline-capable web application designed 
 
 ## Usage
 
-1. **Select a Folder**:
-   - Use the "Select Folder" button to choose a directory for storing screenshots and database files.
-
-2. **Start Capturing**:
+1. **Access the App**:
+   - Open [https://cs-util-com.github.io/ScreenshotHistoryJs/](https://cs-util-com.github.io/ScreenshotHistoryJs/) in your browser.
+2. **Select a Folder**:
+   - Click the "Select Folder" button to choose a directory for storing screenshots and database files.
+3. **Start Capturing**:
    - Click the "Start Capture" button to begin capturing screenshots at regular intervals.
-
-3. **Search and Summarize**:
+4. **Search and Summarize**:
    - Use the search bar to find screenshots or summaries by keywords.
-   - Summaries are generated every 30 minutes based on OCR text.
-
-4. **Adjust Settings**:
-   - Open the settings modal to customize:
-     - Image quality (default: 80%).
-     - Diff threshold (default: 3%).
-     - Retention period (default: 90 days).
-     - OCR language and resolution.
-     - AI model provider and API keys.
-
-5. **Offline Usage**:
-   - The app works offline after the initial load. Screenshots and data are stored locally.
+   - Summaries are generated every 30 minutes from OCR text.
+5. **Adjust Settings**:
+   - Open the settings modal to customize image quality, diff threshold, retention period, OCR language, resolution, and AI model provider/API keys.
+6. **Offline Usage**:
+   - Once loaded, the app works offline using locally stored screenshots and data.
 
 ## AI Integration
 
