@@ -265,9 +265,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const folderPath = await getFolderPath();
     const hasDirectoryHandle = await restoreDirectoryHandle(false); // Pass false to avoid auto-showing picker
     
-    if (folderPath) {
+    // Only show the folder name if we both have a path AND valid permissions
+    if (folderPath && hasDirectoryHandle) {
         // Update the Select Folder button text to show the selected folder
         selectFolderButton.textContent = `Folder: ${folderPath}`;
+    } else if (folderPath) {
+        // We have a path but no valid permissions - hint this in the button text
+        selectFolderButton.textContent = `Select Folder (reconnect to ${folderPath})`;
+    } else {
+        // Reset to default text if no folder is selected
+        selectFolderButton.textContent = `Select Folder`;
     }
 
     // Initially hide capture buttons until folder is confirmed
@@ -294,13 +301,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Try to restore permissions on any click
         const permissionsRestored = await requestPermissionOnUserActivation();
         
-        // Try to save database if needed
-        saveDbOnUserInteraction();
-        
-        // Add UI feedback when permissions are restored using the new notification system
+        // Update button text if permissions were restored
         if (permissionsRestored) {
+            const folderPath = await getFolderPath();
+            if (folderPath) {
+                selectFolderButton.textContent = `Folder: ${folderPath}`;
+            }
+            
             window.showNotification('Folder permissions restored!', 'success', 3000);
         }
+        
+        // Try to save database if needed
+        saveDbOnUserInteraction();
     });
 
     // Enhanced focus detection to handle permission restoration automatically

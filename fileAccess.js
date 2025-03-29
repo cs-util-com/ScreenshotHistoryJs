@@ -326,7 +326,19 @@ async function restoreDirectoryHandle(showPickerOnFail = false) {
             return false;
         }
     }
-    return !!directoryHandle;
+    
+    // Additional check: if we have a directory handle, verify we still have permission
+    if (directoryHandle) {
+        try {
+            const hasPermission = await verifyPermission(directoryHandle, true);
+            return hasPermission;
+        } catch (e) {
+            console.warn('Error checking permission on existing handle:', e);
+            return false;
+        }
+    }
+    
+    return false;
 }
 
 async function getFolderIdentifier() {
