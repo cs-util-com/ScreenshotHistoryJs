@@ -3,6 +3,9 @@ let intervalId = null;
 let lastImageData = null; // Store the last captured image data for diffing
 let capturing = false;
 
+// Create a counter to reduce "similar screenshot" spam
+let similarScreenshotsSkipped = 0;
+
 import {
     saveScreenshot
 } from './fileAccess.js';
@@ -67,10 +70,16 @@ async function startCapture() {
                 // Compare with the last image
                 const diffThreshold = localStorage.getItem('diffThreshold') || 3;
                 if (lastImageData && !compareScreenshots(imageData, lastImageData, diffThreshold / 100)) {
-                    console.log('Screenshots are similar, skipping save.');
+                    // Only log every 10th similar screenshot to reduce spam
+                    similarScreenshotsSkipped++;
+                    if (similarScreenshotsSkipped % 10 === 0) {
+                        console.log(`Skipped ${similarScreenshotsSkipped} similar screenshots`);
+                    }
                     return;
                 }
 
+                // Reset counter when we find a different image
+                similarScreenshotsSkipped = 0;
                 lastImageData = imageData; // Update the last image data
 
                 // Generate a clean timestamp for database storage (ISO format)

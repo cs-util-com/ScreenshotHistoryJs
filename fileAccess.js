@@ -122,7 +122,6 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
         if (pngBlob.size > jpgBlob.size) {
             try {
                 await directoryHandle.removeEntry(pngFilename);
-                console.log('Saved JPG version (smaller file)');
                 savedBlob = jpgBlob.slice(0); // Create a copy of the blob
                 imageUrl = URL.createObjectURL(savedBlob);
                 savedFilename = jpgFilename;
@@ -132,7 +131,6 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
         } else {
             try {
                 await directoryHandle.removeEntry(jpgFilename);
-                console.log('Saved PNG version (smaller file)');
                 savedBlob = pngBlob.slice(0); // Create a copy of the blob
                 imageUrl = URL.createObjectURL(savedBlob);
                 savedFilename = pngFilename;
@@ -144,8 +142,6 @@ async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
         // Store a reference to the blob to prevent garbage collection
         if (!window._savedBlobs) window._savedBlobs = {};
         window._savedBlobs[timestamp] = savedBlob;
-        
-        console.log('Screenshot saved successfully');
 
         // Perform OCR
         try {
@@ -309,8 +305,12 @@ async function scanFolderForScreenshots() {
         // Sort by timestamp (newest first)
         screenshots.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
         
-        if (screenshots.length > 0) {
+        // Only log if this is the first time scanning or there's a significant change
+        if (screenshots.length > 0 && 
+            (!window._lastScreenshotCount || 
+            Math.abs(window._lastScreenshotCount - screenshots.length) > 5)) {
             console.log(`Found ${screenshots.length} screenshots in folder`);
+            window._lastScreenshotCount = screenshots.length;
         }
         return screenshots;
     } catch (e) {

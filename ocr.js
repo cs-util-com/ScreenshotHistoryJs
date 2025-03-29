@@ -45,12 +45,13 @@ async function performOCR(imageSource, timestamp, imageUrl) {
             }
         }
         
-        // Create a Tesseract worker with minimal logging
+        // Create a Tesseract worker with minimal logging - disable almost all logs
         const worker = await Tesseract.createWorker({
-            // Only log once at 0% and once at 100% to reduce spam
+            // Completely disable progress logger to eliminate console spam
             logger: m => {
-                if (m.progress === 0 || m.progress === 1) {
-                    console.log(`OCR ${m.status}: ${Math.round(m.progress * 100)}%`);
+                // Only log completion to help with debugging if needed
+                if (m.status === 'recognizing text' && m.progress === 1) {
+                    console.log('OCR completed');
                 }
             },
             errorHandler: err => console.error('Tesseract Worker Error:', err)
@@ -69,11 +70,9 @@ async function performOCR(imageSource, timestamp, imageUrl) {
             const { data } = await worker.recognize(imageBlob);
             const text = data.text;
             
-            // Only log a short preview of the OCR text
-            if (text && text.length > 0) {
-                console.log('OCR completed successfully');
-            } else {
-                console.log('OCR completed with no text detected');
+            // Only log if OCR actually found text
+            if (text && text.trim().length > 0) {
+                // Don't log the text at all to reduce console spam
             }
             
             await addScreenshot(timestamp, finalImageUrl, text);

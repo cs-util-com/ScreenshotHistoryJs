@@ -180,7 +180,6 @@ async function saveCurrentDatabaseToFolder() {
                         // Delete the temp file
                         await dirHandle.removeEntry(tempDbFilename);
                         
-                        console.log('Database saved to folder successfully with rolling update');
                         return true;
                     } catch (e) {
                         console.error('Error renaming temp database file:', e);
@@ -485,7 +484,6 @@ async function exportDBToJson(directoryHandle) {
 // Handle database saving during user interactions
 function saveDbOnUserInteraction() {
     if (window._needsDatabaseSave) {
-        console.log('Attempting to save database on user interaction');
         saveCurrentDatabaseToFolder();
         window._needsDatabaseSave = false;
     }
