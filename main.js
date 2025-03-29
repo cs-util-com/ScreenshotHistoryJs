@@ -303,8 +303,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Show search result count
         if (searchTerm) {
+            // Remove existing search feedback to avoid duplication
+            const oldFeedback = document.querySelector('.search-result-count');
+            if (oldFeedback) oldFeedback.remove();
+            
             const searchResultCount = document.createElement('div');
-            searchResultCount.className = 'text-sm text-gray-500 mb-4';
+            searchResultCount.className = 'search-result-count text-sm text-gray-500 mb-4';
             searchResultCount.textContent = `Found ${results.length} results for "${searchTerm}"`;
             dailyGroups.insertAdjacentElement('beforebegin', searchResultCount);
         }
