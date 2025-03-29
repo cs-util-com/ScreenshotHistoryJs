@@ -113,6 +113,9 @@ async function importFromJson(jsonData) {
         console.log('Database import complete');
     } catch (error) {
         console.error('Error importing database:', error);
+        if (window.showNotification) {
+            window.showNotification('Failed to import database', 'error');
+        }
     }
 }
 
@@ -207,6 +210,9 @@ async function saveCurrentDatabaseToFolder() {
                         return true;
                     } catch (e) {
                         console.error('Error renaming temp database file:', e);
+                        if (window.showNotification) {
+                            window.showNotification('Failed to save database. Please try again.', 'error');
+                        }
                         return false;
                     }
                 } else {

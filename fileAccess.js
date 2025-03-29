@@ -3,7 +3,12 @@ let directoryHandle = null;
 async function selectFolder() {
     try {
         if (!('showDirectoryPicker' in window)) {
-            alert('Your browser does not support the File System Access API. Please use Chrome/Edge or another compatible browser.');
+            // Replace alert with Tailwind notification
+            if (window.showNotification) {
+                window.showNotification('Your browser does not support the File System Access API. Please use Chrome/Edge or another compatible browser.', 'error', 8000);
+            } else {
+                alert('Your browser does not support the File System Access API. Please use Chrome/Edge or another compatible browser.');
+            }
             return null;
         }
         
@@ -52,11 +57,14 @@ async function selectFolder() {
     } catch (error) {
         console.error('Error selecting folder:', error);
         
-        // More helpful error message to the user
+        // More helpful error message to the user with visual notification
         if (error.name === 'AbortError') {
             console.log('Folder selection was cancelled by user');
         } else if (error.name === 'SecurityError') {
             console.warn('Permission to access files was denied or not in a user gesture context.');
+            if (window.showNotification) {
+                window.showNotification('Permission to access files was denied. Please try again.', 'warning');
+            }
         }
         
         return null;
@@ -66,12 +74,18 @@ async function selectFolder() {
 async function saveScreenshot(pngBlob, jpgBlob, timestamp) {
     if (!directoryHandle) {
         console.warn('No directory selected.');
+        if (window.showNotification) {
+            window.showNotification('No folder selected. Please select a folder first.', 'warning');
+        }
         return null;
     }
 
     // Verify we have write permission without requesting it automatically
     if (await verifyPermission(directoryHandle, true) === false) {
         console.warn('Permission to write to folder was lost. Screenshot queued for later.');
+        if (window.showNotification) {
+            window.showNotification('Waiting for folder permission. Click anywhere to restore access.', 'info');
+        }
         
         // Queue the screenshot for when permissions are restored
         if (!window._pendingScreenshots) {
@@ -601,6 +615,9 @@ async function requestPermissionOnUserActivation() {
                 // Process any pending screenshots that were queued during permission outage
                 if (window._pendingScreenshots && window._pendingScreenshots.length > 0) {
                     console.log(`Processing ${window._pendingScreenshots.length} pending screenshots`);
+                    if (window.showNotification) {
+                        window.showNotification(`Processing ${window._pendingScreenshots.length} pending screenshots...`, 'info');
+                    }
                     
                     // Take only the last few screenshots to avoid flooding
                     const recentScreenshots = window._pendingScreenshots.slice(-5);
@@ -618,10 +635,16 @@ async function requestPermissionOnUserActivation() {
                 }
                 
                 return true;
+            } else if (window.showNotification) {
+                // If permission request was shown but denied, show a message
+                window.showNotification('Permission denied. Some features will be limited until you grant folder access.', 'error');
             }
         }
     } catch (e) {
         console.error('Error requesting permission on user activation:', e);
+        if (window.showNotification) {
+            window.showNotification('Error requesting folder permissions. Please try again.', 'error');
+        }
     }
     return false;
 }

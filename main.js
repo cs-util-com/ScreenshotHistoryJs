@@ -15,7 +15,6 @@ import {
     initDB,
     addScreenshot,
     searchScreenshots,
-    exportDBToJson,
     saveCurrentDatabaseToFolder,
     getScreenshotsFromFolder,
     saveDbOnUserInteraction
@@ -53,6 +52,72 @@ document.addEventListener('DOMContentLoaded', async () => {
     const closeSettingsButton = document.getElementById('closeSettings');
     const saveSettingsButton = document.getElementById('saveSettings');
     const folderDisplay = document.getElementById('folderDisplay');
+
+    // Add notification utility function to the window object so it can be used from other modules
+    window.showNotification = function(message, type = 'info', duration = 5000) {
+        const existingNotification = document.querySelector('.notification-popup');
+        if (existingNotification) {
+            existingNotification.remove(); // Remove any existing notification
+        }
+        
+        // Create the notification element
+        const notification = document.createElement('div');
+        
+        // Set base styles with Tailwind
+        notification.className = 'notification-popup fixed z-50 bottom-4 right-4 p-4 rounded-lg shadow-lg transform transition-all duration-300 ease-in-out';
+        
+        // Add type-specific styles
+        const typeStyles = {
+            'success': 'bg-green-500 text-white',
+            'error': 'bg-red-500 text-white',
+            'warning': 'bg-yellow-500 text-white',
+            'info': 'bg-blue-500 text-white'
+        };
+        
+        notification.className += ' ' + (typeStyles[type] || typeStyles.info);
+        
+        // Add content
+        notification.innerHTML = `
+            <div class="flex items-center">
+                <div class="mr-3">
+                    ${type === 'success' ? '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : ''}
+                    ${type === 'error' ? '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>' : ''}
+                    ${type === 'warning' ? '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>' : ''}
+                    ${type === 'info' ? '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>' : ''}
+                </div>
+                <div>${message}</div>
+                <button class="ml-auto text-white hover:text-gray-200" onclick="this.parentElement.parentElement.remove()">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+        `;
+        
+        // Add to DOM
+        document.body.appendChild(notification);
+        
+        // Fade in
+        setTimeout(() => {
+            notification.style.transform = 'translateY(0)';
+            notification.style.opacity = '1';
+        }, 10);
+        
+        // Auto remove after duration
+        if (duration > 0) {
+            setTimeout(() => {
+                notification.style.transform = 'translateY(20px)';
+                notification.style.opacity = '0';
+                setTimeout(() => {
+                    if (notification.parentElement) {
+                        notification.remove();
+                    }
+                }, 300);
+            }, duration);
+        }
+        
+        return notification;
+    };
 
     // Load settings from local storage
     const imageQuality = localStorage.getItem('imageQuality') || 80;
@@ -119,20 +184,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Try to save database if needed
         saveDbOnUserInteraction();
         
-        // Add UI feedback when permissions are restored
+        // Add UI feedback when permissions are restored using the new notification system
         if (permissionsRestored) {
-            // Show a temporary notification
-            const notification = document.createElement('div');
-            notification.className = 'fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg';
-            notification.textContent = 'Folder permissions restored!';
-            document.body.appendChild(notification);
-            
-            // Remove after 3 seconds
-            setTimeout(() => {
-                notification.style.opacity = '0';
-                notification.style.transition = 'opacity 0.5s';
-                setTimeout(() => notification.remove(), 500);
-            }, 3000);
+            window.showNotification('Folder permissions restored!', 'success', 3000);
         }
     });
 

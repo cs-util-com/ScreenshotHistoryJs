@@ -134,6 +134,11 @@ async function startCapture() {
         console.error('Error starting screen capture:', error);
         capturing = false;
         localStorage.setItem('capturingActive', 'false');
+        
+        // Add user-facing notification
+        if (window.showNotification) {
+            window.showNotification('Failed to start screen capture. Please try again or use a different browser.', 'error');
+        }
     }
 }
 
